@@ -1,10 +1,15 @@
 # archiver
 
+[日本語](README.ja.md)
+
 Local-first CLI that **packs** directory trees into media-sized archives (scattered
 by folder hierarchy, with a JSON mapping for restore), and also supports
 single-archive create / list / extract.
 
 Supported formats: **ZIP**, **TAR**, **TAR.GZ**, **TAR.ZST** (zstd, multi-threaded).
+
+> For a fuller guide in Japanese (recommended if you work in Japanese), see
+> **[README.ja.md](README.ja.md)**.
 
 ## Pack rules (accepted)
 
@@ -12,7 +17,8 @@ Supported formats: **ZIP**, **TAR**, **TAR.GZ**, **TAR.ZST** (zstd, multi-thread
 2. If a folder is too large for the budget, group by **extension**, then size-bin.
 3. A single file larger than the budget is still **one archive** (not byte-split).
 4. Empty directories are recorded in the mapping and recreated on restore.
-5. Budget = media capacity × connection factor (or `--target-size`).
+5. Budget = media capacity × connection factor, explicit `--target-size`, or
+   `--auto-size` transfer estimate.
 
 ## Build
 
@@ -25,30 +31,28 @@ cargo build --release
 ### Pack / restore (primary)
 
 ```bash
-# Estimate a fast-transfer unit size for a USB stick (probe free space + link class)
+# Estimate a fast-transfer unit size for a USB stick
 archiver estimate --path /Volumes/USB --connection usb3
-# → recommended_unit based on ~throughput × 45s, capped by free space
+archiver estimate --path /Volumes/USB --measure
 
-# Pack using that estimate automatically
+# Pack using that estimate
 archiver pack \
   --source ./photos \
   --output /Volumes/USB/backup \
   --auto-size \
   --connection usb3 \
-  --format tar.zst
+  --format tar.zst \
+  --jobs 4 \
+  -v
 
-# DVD capacity budget (legacy capacity mode)
-archiver pack \
-  --source ./photos \
-  --output /Volumes/USB/backup \
-  --media dvd \
-  --connection usb3 \
-  --format tar.zst
+# Plan only
+archiver pack -s ./photos -o ./out --auto-size --dry-run
 
-# Explicit size
+# Explicit size / media preset
 archiver pack -s ./data -o ./out --target-size 700M --format zip
+archiver pack -s ./data -o ./out --media dvd --connection usb3
 
-# Restore
+# Restore (SHA-256 verify on by default)
 archiver restore \
   --mapping /Volumes/USB/backup/archiver-map.json \
   --dest ./restored
@@ -73,7 +77,8 @@ archiver extract -d ./restored backup.zip
 | `list [-f] <archive>` | List members |
 | `extract -d <dir> [-f] <archive>` | Extract one archive |
 
-**Transfer estimate formula:** `unit ≈ practical_write_throughput(connection) × target_secs`, clamped to 4MiB–4GiB and free space.
+**Transfer estimate:** `unit ≈ practical_write_throughput(connection) × target_secs`,
+clamped to 4MiB–4GiB and free space.
 
 **CI:** `cargo test` + `cargo clippy -D warnings` on Ubuntu (see `.github/workflows/ci.yml`).
 
@@ -82,11 +87,14 @@ Path traversal members are **rejected** on extract.
 ## Development
 
 - Spec (pack): [`docs/specs/media-fit-pack.md`](docs/specs/media-fit-pack.md)
+- Acceptance matrix: [`docs/specs/media-fit-acceptance.md`](docs/specs/media-fit-acceptance.md)
 - Spec (single): [`docs/specs/archive-cli.md`](docs/specs/archive-cli.md)
 - Architecture: [`docs/architecture/rust-cli-architecture.md`](docs/architecture/rust-cli-architecture.md)
+- Agent contract: [`AGENTS.md`](AGENTS.md)
 
 ```bash
 cargo test
+cargo clippy --all-targets -- -D warnings
 ```
 
 ## Layout
@@ -94,12 +102,19 @@ cargo test
 ```text
 src/
   core/domain/       # pack planner, media budget, mapping types, path safety
-  core/application/  # pack / restore / create / list / extract
-  core/ports/        # ArchiveEngine, FileScanner, MappingStore
-  adapters/          # zip/tar/zstd, FS scan, JSON mapping
+  core/application/  # pack / restore / estimate / create / list / extract
+  core/ports/        # ArchiveEngine, FileScanner, FileSystem, ...
+  adapters/          # zip/tar/zstd, FS scan, JSON mapping, measure
   delivery/          # clap CLI
 ```
 
+## Out of scope (current)
+
+- Byte-splitting a single huge file across archives
+- Multi-volume spanning across physical media
+- Encryption
+- Strict post-compression size budgeting ([ADR 0013](docs/architecture/adr/0013-compressed-size-packing-mode.md))
+
 ## License
 
-MIT (project-specific license may be added later).
+MIT (project-specific LICENSE file may be added later).

@@ -1,0 +1,5 @@
+# Records which commit of the AI-human collaboration template this project
+# last synced against. Read by scripts/update-ai-collaboration-files.sh.
+# Do not edit by hand except to correct the source.
+source: git@github.com:nn0cl/llm-project-template.git
+ref: 6928294be4b26b43c2a34dab8f61fa0bcf5453e9

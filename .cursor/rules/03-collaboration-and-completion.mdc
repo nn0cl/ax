@@ -1,0 +1,55 @@
+---
+description: Cursor agent Adjudicator interaction, decision gates, and handoff/completion rules
+globs:
+alwaysApply: true
+---
+
+# Cursor Agent Instructions: Collaboration and Completion
+
+## Adjudicator Interaction
+
+Root `AGENTS.md` is auto-applied by Cursor independently of this file
+([Rules](https://cursor.com/docs/rules.md); Help: "Cursor picks it up
+automatically"). It holds ADR capture, design intake, AI payload/routing
+selection, and `[THOUGHT]`-scaffold-vs-compact-note usage. Do not duplicate
+those paragraphs here, and do not `@`-reference `AGENTS.md` from
+`.cursor/rules` (see ADR 0006 Cursor evidence). Decision Gates and
+Handoff/Completion below are Cursor-side complements kept in this file.
+
+## Decision Gates
+
+Stop for Adjudicator decision when:
+
+- phase is not explicitly selected.
+- issue dependencies are unclear or unresolved.
+- requirements imply a new architecture decision.
+- a payload would need unrelated large context.
+- a task requires secrets, full source documents, or full private data
+  exports.
+- an external provider, SDK, model, DB product, or schema convention must be
+  chosen.
+- a change would alter accepted tests.
+- deterministic verification contradicts AI assumptions.
+
+## Handoff and Completion
+
+When handing off or stopping before completion, use
+`docs/templates/agent-handoff.md`, stating current phase, completed
+artifacts, next safe action, blockers, files changed, and verification
+status. When asking the Adjudicator for approval, use the review points from
+`docs/templates/adjudicator-review.md`.
+
+Generated source code must minimize human cognitive load. Prefer clear
+responsibility boundaries, small functions, straightforward names, and
+reviewable tests. Do not compress implementation into dense code just to be
+minimal.
+
+Before reporting completion, check `docs/collaboration/definition-of-done.md`.
+Create AI work traces under `docs/collaboration/traces/` when the trace
+policy requires it. Use feature-unit branches for feature work; do not
+implement issue work directly on `main` or the trunk branch, per
+`docs/collaboration/branch-commit-pr-discipline.md`.
+
+For feature work, identify local issue (`docs/issues/LISS-*`) or GitHub
+issue dependencies before creating the branch, per
+`docs/collaboration/local-issue-planning.md`.

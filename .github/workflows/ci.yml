@@ -1,0 +1,197 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  repository-sanity:
+    name: Repository sanity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check required project documents
+        shell: bash
+        run: |
+          set -euo pipefail
+          required_files=(
+            "AGENTS.md"
+            "CLAUDE.md"
+            ".gitignore"
+            ".github/dependabot.yml"
+            ".github/copilot-instructions.md"
+            ".github/pull_request_template.md"
+            ".github/ISSUE_TEMPLATE/bug_report.md"
+            ".github/ISSUE_TEMPLATE/config.yml"
+            ".github/ISSUE_TEMPLATE/feature_request.md"
+            ".grok/rules/01-quickstart.md"
+            ".grok/rules/02-architecture-boundaries.md"
+            ".grok/rules/03-collaboration-and-completion.md"
+            ".cursor/rules/01-quickstart.mdc"
+            ".cursor/rules/02-architecture-boundaries.mdc"
+            ".cursor/rules/03-collaboration-and-completion.mdc"
+            "docs/at-tdd/process.md"
+            "docs/collaboration/ai-human-scheme.md"
+            "docs/collaboration/source-code-quality.md"
+            "docs/collaboration/definition-of-done.md"
+            "docs/collaboration/adoption-guide.md"
+            "docs/collaboration/template-benefits.md"
+            "docs/collaboration/project-start-guide.md"
+            "docs/collaboration/process-gap-register.md"
+            "docs/collaboration/ai-work-trace-log.md"
+            "docs/collaboration/evaluation-and-golden-examples.md"
+            "docs/collaboration/llm-cost-reduction.md"
+            "docs/collaboration/model-tool-capability-matrix.md"
+            "docs/collaboration/privacy-context-budget-policy.md"
+            "docs/collaboration/branch-commit-pr-discipline.md"
+            "docs/collaboration/local-issue-planning.md"
+            "docs/collaboration/prompt-instruction-change-control.md"
+            "docs/collaboration/session-start-and-resume.md"
+            "docs/architecture/README.md"
+            "docs/architecture/project-structure.md"
+            "docs/architecture/testing-strategy.md"
+            "docs/architecture/dependency-policy.md"
+            "docs/architecture/ai-request-routing.md"
+            "docs/architecture/io-reasoning-contracts.md"
+            "docs/architecture/agent-quickstart.md"
+            "docs/architecture/implementation-readiness.md"
+            "docs/templates/design-intake.md"
+            "docs/templates/agent-handoff.md"
+            "docs/templates/ai-work-trace.md"
+            "docs/templates/local-issue.md"
+            "docs/templates/work-plan.md"
+            "docs/templates/adjudicator-review.md"
+            "docs/templates/gherkin-feature.md"
+            "docs/templates/adr.md"
+            "docs/collaboration/traces/.gitkeep"
+            "docs/issues/.gitkeep"
+            "docs/work-plans/.gitkeep"
+            "docs/evaluation/golden-examples/.gitkeep"
+            "docs/evaluation/criteria/.gitkeep"
+            "scripts/copy-ai-collaboration-files.sh"
+            "scripts/update-ai-collaboration-files.sh"
+            "scripts/init-llm-context.sh"
+            "scripts/lib/collaboration-template-paths.sh"
+          )
+
+          for file in "${required_files[@]}"; do
+            test -f "$file"
+          done
+
+      - name: Check architecture decision records
+        shell: bash
+        run: |
+          set -euo pipefail
+          for n in 0001 0002 0003 0004 0005 0006 0007 0008 0009 0010 0011; do
+            ls "docs/architecture/adr/${n}-"*.md >/dev/null
+          done
+
+      - name: Check script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n \
+            scripts/copy-ai-collaboration-files.sh \
+            scripts/update-ai-collaboration-files.sh \
+            scripts/init-llm-context.sh \
+            scripts/lib/collaboration-template-paths.sh
+
+      - name: Check unresolved conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -n -E '^(<<<<<<<|=======|>>>>>>>)' -- . ':!.git' >/tmp/conflict-markers.txt; then
+            cat /tmp/conflict-markers.txt >&2
+            exit 1
+          fi
+
+      - name: Check template copy smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/target"
+          git init -q "$tmp/target"
+          scripts/copy-ai-collaboration-files.sh \
+            --target "$tmp/target" \
+            --project-name "Smoke App" \
+            --domain-summary "template smoke test" \
+            --stack "test stack"
+          scripts/init-llm-context.sh "$tmp/target" >/tmp/init-llm-context-smoke.txt
+          test -f "$tmp/target/.gitignore"
+          test -f "$tmp/target/docs/issues/.gitkeep"
+          test -f "$tmp/target/docs/collaboration/traces/.gitkeep"
+          test -f "$tmp/target/docs/specs/.gitkeep"
+          ! ls "$tmp/target/docs/issues/"LISS-*.md >/dev/null 2>&1
+          ! ls "$tmp/target/docs/collaboration/traces/"*.md >/dev/null 2>&1
+          test ! -f "$tmp/target/docs/specs/template-rollout.md"
+          if grep -R -n -E '<PROJECT_NAME: one-line description|<FILL IN: e\.g\. backend' \
+            "$tmp/target/AGENTS.md" \
+            "$tmp/target/CLAUDE.md" \
+            "$tmp/target/.github/copilot-instructions.md" \
+            "$tmp/target/.grok/rules" \
+            "$tmp/target/.cursor/rules"; then
+            echo "Copy script left basic project placeholders unfilled." >&2
+            exit 1
+          fi
+
+      - name: Check agent operating contract change traceability
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          changed_files=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          contract_changed=false
+          trace_added=false
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              docs/collaboration/traces/*.md)
+                trace_added=true
+                ;;
+              AGENTS.md|CLAUDE.md|.github/copilot-instructions.md|.grok/rules/*.md|.cursor/rules/*.mdc|docs/at-tdd/process.md|docs/collaboration/*.md|docs/templates/*.md)
+                contract_changed=true
+                ;;
+            esac
+          done <<< "$changed_files"
+          if [ "$contract_changed" = true ] && [ "$trace_added" = false ]; then
+            echo "Agent operating contract files changed without an accompanying trace under docs/collaboration/traces/." >&2
+            echo "See docs/collaboration/prompt-instruction-change-control.md." >&2
+            exit 1
+          fi
+
+  rust:
+    name: Rust test and clippy
+    runs-on: ubuntu-latest
+    if: hashFiles('Cargo.toml') != ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo test
+        run: cargo test
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings

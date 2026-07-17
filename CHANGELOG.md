@@ -5,42 +5,78 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Product meaning of 0.x versions: [ADR 0014](docs/architecture/adr/0014-product-quality-versioning-and-support.md).
+
 ## [Unreleased]
 
 ### Added
 
-- Size presets for `-s` / `--size` / `target_size`: `c2` (10MiB; alias `low-net`),
-  `fat32` (3.8GiB), `flash` (1GiB), `max` (practically no split)
-
 ### Changed
 
-- CLI binary primary name **`ax`** (compat binary `archiver` still built)
-- Short subcommands: `cr` `ex` `ls` `es` `pa` `re` `ve` (long aliases retained)
-- Globals: `-c` config, `-s`/`--size` budget, `-o`/`--output` path
-- Pack source short flag is **`-i`/`--source`** (`-s` is global size)
+### Fixed
+
+## [0.1.0] - 2026-07-17
+
+**Usable baseline** (ADR 0014): documented primary path is intentional —
+pack / restore / verify / estimate, plan v2, optional config and integrity
+options. Still **AS IS**, no SLA. Breaking changes from here require CHANGELOG
+notes and SemVer bumps per [RELEASE.md](docs/RELEASE.md).
 
 ### Added
 
-- Optional pack integrity: `--verify-stage` / config `verify_stage=true`
-  - Pre-transfer: extract staged archive and re-check member SHA-256
-  - Post-transfer: dest archive SHA-256 must equal stage archive SHA-256
-- Settings file: global `--config PATH` (`.inf` / `.ini`); `[pack]` section; CLI overrides file
+#### CLI surface (ADR 0020, 0021)
+- Primary binary **`ax`** (Archive eXchange); optional `archiver` via `compat-bin`
+- Short subcommands: `cr` `ex` `ls` `es` `pa` `re` `ve` (long names as aliases)
+- Globals: `-c` config, `-s`/`--size` budget or preset, `-o`/`--output`
+- Pack source: `-i`/`--source`
+- Size presets: `c2` (10MiB; alias `low-net`), `fat32` (3.8GiB), `flash` (1GiB),
+  `max` (practically no split)
+
+#### Pack integrity & config (ADR 0015–0017)
+- Optional `--verify-stage` / `verify_stage=true` (pre-transfer member SHA-256,
+  post-transfer archive SHA-256)
+- Settings file: `--config` / `.inf` / `.ini` `[pack]`; CLI overrides file
 - Example: `examples/archiver.inf`
-- Format-aware compressed size **estimate** (algorithm prior):
-  - `tar` ≈ 1.02, `zip` ≈ 0.70, `tar.gz` ≈ 0.65, `tar.zst` ≈ 0.55
-  - Used for progress write % / ETA until first transfer; then empirical ratio
-  - Logged as `size_estimate:` / resource informational line (free-space gate still logical worst-case)
-- Content-class + algorithm estimate: extension → class (text/source/image/video/…)
-  × format efficiency (`ratio ≈ 1 - (1 - base_zstd) * eff`); class breakdown in `size_estimate:`
-- Product ADRs **0014–0019** (quality/versioning, strict integrity, verify_stage,
-  config precedence, content estimates, support tiers) + `docs/architecture/adr/README.md`
-- Manual QA checklist: `docs/QA.md`
 
-### Removed / breaking
+#### Size estimate (ADR 0018)
+- Format prior ratios for write % / ETA until first transfer, then empirical
+- Content-class × algorithm estimate; class breakdown at `-vv`
 
-- No legacy resume: plan **v2** only; Done units require **archive_sha256** (size-only skip removed)
-- `--resume` without plan file is an **error** (no soft “start fresh”)
-- Mapping members require non-empty **sha256** (no serde default empty)
+#### Progress UI (ADR 0022–0024, LISS-0011)
+- Fixed-height dashboard: `total` + `cmp0..N` + `trn` (UI thread only)
+- 80-column design baseline; wide terminals 120–200 cols
+- Fixed-width right-aligned numerics; full `elapsed` / `ETA` on total (no path)
+- File labels `name·tag` (stable path hash); dual `archive | source` when wide
+- Quiet text logs by default; detail at `-vv` (ADR 0023)
+
+#### Parallelism & resources (ADR 0025–0026, LISS-0015/0016)
+- `--at` / `--auto-jobs`: plan-time jobs from CPU × units × files × I/O class
+  (`--connection` / throughput / work-dir); ceiling 32; no mid-run resize
+- `--max-use SIZE`: unit budget cap; serial compress → transfer → delete stage
+- Exclusive pack locks: `{output}/.ax-pack.lock` (+ work-dir); concurrent pack fails busy
+
+#### Docs & quality gates
+- Product ADRs **0014–0026**, design book, LISS issues, manual [QA.md](docs/QA.md)
+- CI + optional pre-push: `cargo clippy --all-targets -- -D warnings`
+  (`scripts/install-git-hooks.sh`)
+
+### Changed
+
+- Default pack format remains `tar.zst`; default jobs `min(CPU, 8)` without `--at`
+- Progress worker rows named `cmp*` / `trn` (not long `compress*` / `transfer`)
+- Free-space hard gate remains **logical × safety** (compressed estimate is info only)
+
+### Fixed
+
+- Progress whole-row middle-truncate garble (`…TA` / metrics corruption)
+- Invalid CI job-level `hashFiles()` (workflow would not start)
+- Concurrent pack no longer policy-only: runtime lock enforced
+
+### Removed / breaking (vs early 0.0.x experiments)
+
+- No legacy resume: plan **v2** only; Done units require **archive_sha256**
+- `--resume` without plan file is an **error**
+- Mapping members require non-empty **sha256**
 - `--measure` failure no longer falls back to table throughput
 - Mapping/plan version mismatch is a hard error
 
@@ -67,5 +103,6 @@ Initial product-oriented release of the media-fit archiver.
 - pack `--format tar.zst`
 - pack `--jobs` = CPU count (max 8)
 
-[Unreleased]: https://github.com/nn0cl/archiver/compare/v0.0.1...HEAD
-[0.0.1]: https://github.com/nn0cl/archiver/releases/tag/v0.0.1
+[Unreleased]: https://github.com/nn0cl/ax/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/nn0cl/ax/compare/v0.0.1...v0.1.0
+[0.0.1]: https://github.com/nn0cl/ax/releases/tag/v0.0.1

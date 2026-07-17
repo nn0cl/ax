@@ -40,7 +40,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bin="target/release/archiver"
+          # Default binary is `ax` (ADR 0020); keep artifact names for install script.
+          bin="target/release/ax"
           test -f "$bin"
           cp "$bin" "${{ matrix.artifact }}"
           chmod +x "${{ matrix.artifact }}"

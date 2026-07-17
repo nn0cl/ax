@@ -9,8 +9,10 @@ Use this as the entry point; normative rules live in ADRs and specs.
 |------|----------|
 | Package name | `archiver` (Cargo) |
 | Default binary | **`ax`** (Archive eXchange) — ADR 0020 |
+| Version line | **v0.1.0** usable baseline — ADR 0014; see `CHANGELOG.md` |
 | Warranty | AS IS, no SLA — ADR 0014 |
 | Platforms | macOS/Linux supported — ADR 0019 |
+| Concurrent pack | Rejected at runtime (`.ax-pack.lock`) — ADR 0026 |
 
 ## Architecture map
 

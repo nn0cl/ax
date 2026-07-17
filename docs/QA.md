@@ -1,10 +1,10 @@
 # Manual QA checklist (pre-release / best-effort)
 
 Automated tests cover the **Supported** path (ADR 0019). This list is for
-humans before tagging a release or validating USB workflows.
+humans before tagging a release (e.g. **v0.1.0**) or validating USB workflows.
 
 **Not a certification.** Skip items that do not apply; record date/environment
-if you file a release note.
+if you file a release note. Product version: see `Cargo.toml` / `ax --version`.
 
 ## Environment
 
@@ -20,6 +20,8 @@ if you file a release note.
 - [ ] `pack --config examples/archiver.inf` (with paths filled) or custom `.inf`
 - [ ] CLI overrides config (e.g. `--jobs` / `--verify-stage`)
 - [ ] Optional: `--at --connection usb3` logs `auto_jobs: … io_cap=… → jobs=N`; `-j 2 --at` keeps jobs=2
+- [ ] Optional: `--max-use 4G` forces serial pipeline (jobs=1, one staged unit)
+- [ ] Second concurrent `pack` to same `-o` fails with pack busy / `.ax-pack.lock`
 
 ## Integrity
 

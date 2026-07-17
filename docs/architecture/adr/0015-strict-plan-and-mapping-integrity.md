@@ -11,7 +11,7 @@ Earlier designs allowed soft paths (size-only resume skip, empty member
 hashes, resume without plan starting fresh). Soft paths hide corruption and
 complicate testing (“did resume really verify?”).
 
-Product stance for v0.0.1+ is **self-responsibility with strict integrity**:
+Product stance for v0.1.0+ (and earlier 0.0.x) is **self-responsibility with strict integrity**:
 fail closed rather than guess.
 
 ## Dependency Adoption Evidence

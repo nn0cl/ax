@@ -33,7 +33,8 @@ Not applicable.
    - `0.1.0` — **usable baseline**: documented primary path
      (pack / restore / verify / estimate, plan v2, optional config &
      verify_stage) is intentional; breaking changes require CHANGELOG +
-     minor/major bump rules in `docs/RELEASE.md`
+     minor/major bump rules in `docs/RELEASE.md`.
+     **v0.1.0 docs/CHANGELOG prepared 2026-07-17**; tag via `docs/RELEASE.md` when ready.
    - `1.0.0` — **not targeted** until (if ever) the project accepts stronger
      compatibility and support commitments
 4. **User duty**: Important data requires user-run `verify` (and optionally

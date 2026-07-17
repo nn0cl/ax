@@ -238,16 +238,17 @@ archiver extract -d ./restored backup.zip
 ## 製品情報
 
 ```bash
-archiver --version
-archiver --help
+ax --version
+ax --help
 ```
 
-- **Version**: **v0.0.1**
+- **Version**: **v0.1.0**（usable baseline — [ADR 0014](docs/architecture/adr/0014-product-quality-versioning-and-support.md)）
 - **Author**: nn0cl \<nn0cl@dstechnology.co.jp\>
 - **Copyright**: (c) nn0cl@dstechnology.co.jp. All rights reserved.
 - **依存バージョン**: [docs/INSTALL.md](docs/INSTALL.md)（Rust 1.74+、クレート範囲と `Cargo.lock`）
 - **リリース手順**: [docs/RELEASE.md](docs/RELEASE.md) / `./scripts/release.sh X.Y.Z`
 - **変更履歴**: [CHANGELOG.md](CHANGELOG.md)
+- **製品設計入口**: [docs/architecture/ax-product-design-book.md](docs/architecture/ax-product-design-book.md)
 
 ### 免責・自己責任（保証なし）
 
@@ -268,7 +269,7 @@ archiver --help
 |------|------|
 | **Supported** | macOS / Linux、通常ファイル、主経路 pack/restore/verify/estimate、plan v2 |
 | **Best-effort** | 低速 USB、巨大単一ファイル、`--verify-stage`、コンテンツ種別のサイズ試算 |
-| **Unsupported** | Windows 保証なし、同一 output への並列 pack、数百万 inode の体系保証 |
+| **Unsupported** | Windows 保証なし、同一 output への並列 pack（ランタイムは `.ax-pack.lock` で拒否）、数百万 inode の体系保証 |
 
 手動チェックリスト: [`docs/QA.md`](docs/QA.md)。製品方針: [ADR 0014](docs/architecture/adr/0014-product-quality-versioning-and-support.md)。  
 製品 ADR 要約: [`docs/architecture/adr/README.md`](docs/architecture/adr/README.md)。

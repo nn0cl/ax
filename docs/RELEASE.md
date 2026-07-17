@@ -1,13 +1,14 @@
 # Release process
 
-How to cut a versioned release of **archiver**.
+How to cut a versioned release of **ax** / **archiver**.
 
 ## Versioning
 
 - **SemVer** in `Cargo.toml` (`major.minor.patch`)
-- Git tag: `vX.Y.Z` (e.g. `v0.0.1`)
+- Git tag: `vX.Y.Z` (e.g. `v0.1.0`)
 - Document changes in `CHANGELOG.md` under `[Unreleased]`, then move to `[X.Y.Z]` on release
 - Product meaning of 0.x: **[ADR 0014](architecture/adr/0014-product-quality-versioning-and-support.md)**
+- Repository: `https://github.com/nn0cl/ax`
 
 | Bump | When |
 |------|------|
@@ -17,14 +18,15 @@ How to cut a versioned release of **archiver**.
 
 ### Usable baseline (`0.1.0`) checklist
 
-Before tagging `v0.1.0`:
+Status for **v0.1.0** documentation prep:
 
-- [ ] `cargo test` + clippy green
-- [ ] CHANGELOG section for 0.1.0 lists user-visible features
-- [ ] Primary path documented: pack / restore / verify / estimate
-- [ ] Plan v2 + mapping integrity (ADR 0015) unchanged or migration notes
-- [ ] Optional: spot-check `docs/QA.md`
-- [ ] Disclaimer / support tiers still accurate (ADR 0014, 0019)
+- [x] Primary path documented: pack / restore / verify / estimate (`README`, `README.ja`)
+- [x] CHANGELOG `[0.1.0]` lists user-visible features
+- [x] Plan v2 + mapping integrity (ADR 0015)
+- [x] Disclaimer / support tiers (ADR 0014, 0019)
+- [x] CI + clippy gate documented (`docs/issues/LISS-0003`, pre-push)
+- [ ] Tag `v0.1.0` + GitHub Release (operator step: `./scripts/release.sh 0.1.0`)
+- [ ] Optional: spot-check `docs/QA.md` on a real USB
 
 ## Preconditions
 
@@ -45,14 +47,14 @@ cargo build --release
 4. Commit: `chore(release): vX.Y.Z`
 5. Tag: `git tag -a vX.Y.Z -m "archiver vX.Y.Z"`
 6. Push: `git push origin main` and `git push origin vX.Y.Z`
-7. Create GitHub Release (optional): attach `target/release/archiver` or CI artifacts
+7. Create GitHub Release (optional): attach `target/release/ax` (and CI artifacts)
 
 Helper script:
 
 ```bash
-./scripts/release.sh 0.1.1
+./scripts/release.sh 0.1.0
 # dry-run:
-./scripts/release.sh 0.1.1 --dry-run
+./scripts/release.sh 0.1.0 --dry-run
 ```
 
 ## CI

@@ -4,7 +4,7 @@ Install **ax** (Archive eXchange / package name `archiver`) on macOS or Linux.
 
 | | |
 |--|--|
-| **Product version** | **v0.0.1** (`Cargo.toml` / `ax --version`) |
+| **Product version** | **v0.1.0** (`Cargo.toml` / `ax --version`) — usable baseline ([ADR 0014](architecture/adr/0014-product-quality-versioning-and-support.md)) |
 | **Default binary** | **`ax`** (`cargo build` / `cargo install`; `default-run = "ax"`) |
 | **Compat name** | optional `archiver` binary (`--features compat-bin`) or symlink → `ax` |
 | **Disclaimer** | AS IS, no warranty, no SLA — use at your own risk |
@@ -120,13 +120,13 @@ Environment:
 | `PREFIX` | Install prefix (default: `$HOME/.local`) |
 | `BIN_DIR` | Override binary directory (default: `$PREFIX/bin`) |
 | `REPO` | GitHub `owner/repo` for `--from-release` (default: from `git remote`) |
-| `VERSION` | Release tag without `v`, e.g. `0.0.1` (default: latest) |
+| `VERSION` | Release tag without `v`, e.g. `0.1.0` (default: latest) |
 
 Examples:
 
 ```bash
 PREFIX=/usr/local sudo -E ./scripts/install.sh
-REPO=myorg/archiver VERSION=0.0.1 ./scripts/install.sh --from-release
+REPO=nn0cl/ax VERSION=0.1.0 ./scripts/install.sh --from-release
 ```
 
 ---
@@ -179,7 +179,7 @@ After a `vX.Y.Z` tag is pushed, CI may publish assets:
 ```bash
 # Example (adjust REPO / asset names to match the Release page)
 REPO=owner/archiver
-VERSION=0.0.1   # or omit for latest via install.sh
+VERSION=0.1.0   # or omit for latest via install.sh
 
 # macOS
 curl -fsSL -o archiver \

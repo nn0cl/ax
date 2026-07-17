@@ -49,7 +49,7 @@ This software is provided **AS IS**, without warranty of any kind. Automated tes
 exist to reduce regressions; they do **not** guarantee correctness on every
 environment or dataset. **No SLA.** Use at your own risk.
 
-**Version: v0.0.1**
+**Version: v0.1.0** (usable baseline — [ADR 0014](docs/architecture/adr/0014-product-quality-versioning-and-support.md))
 
 Author: nn0cl \<nn0cl@dstechnology.co.jp\>.  
 Copyright (c) nn0cl@dstechnology.co.jp. All rights reserved.

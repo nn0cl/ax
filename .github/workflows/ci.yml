@@ -177,7 +177,8 @@ jobs:
   rust:
     name: Rust test and clippy
     runs-on: ubuntu-latest
-    if: hashFiles('Cargo.toml') != ''
+    # Note: hashFiles() is not valid on job-level `if` (only after checkout / step context).
+    # This repo always has Cargo.toml — run the rust gate unconditionally.
     steps:
       - name: Checkout
         uses: actions/checkout@v7

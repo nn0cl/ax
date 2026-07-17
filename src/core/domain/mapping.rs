@@ -11,7 +11,6 @@ pub struct MappingManifest {
     pub media_budget_bytes: u64,
     pub format: String,
     pub size_basis: String,
-    #[serde(default)]
     pub empty_directories: Vec<String>,
     pub archives: Vec<MappingArchive>,
 }
@@ -28,8 +27,7 @@ pub struct MappingArchive {
 pub struct MappingMember {
     pub source_relpath: String,
     pub size: u64,
-    /// Lowercase hex SHA-256 of source file bytes at pack time.
-    #[serde(default)]
+    /// Lowercase hex SHA-256 of source file bytes at pack time (required; no empty default).
     pub sha256: String,
 }
 

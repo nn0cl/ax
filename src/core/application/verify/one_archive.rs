@@ -11,6 +11,7 @@ use crate::core::ports::{
 };
 use std::collections::HashSet;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn verify_one_archive<E, F, H>(
     engine: &E,
     fs: &F,
@@ -157,7 +158,11 @@ where
     for member in &archive.members {
         interrupt::check()?;
         if member.sha256.is_empty() {
-            report.members_skipped_no_hash += 1;
+            report.issues.push(format!(
+                "{}: member missing sha256 (mapping v2 requires pack-time hash): {}",
+                archive.archive_relpath, member.source_relpath
+            ));
+            archive_ok = false;
             continue;
         }
         let path = match safe_join(&stage, &member.source_relpath) {

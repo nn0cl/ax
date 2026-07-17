@@ -33,7 +33,26 @@ impl MappingStore for JsonMappingStore {
 
     fn read(&self, path: &Path) -> Result<MappingManifest, ArchiveError> {
         let data = fs::read_to_string(path)?;
-        serde_json::from_str(&data).map_err(|e| ArchiveError::Mapping(e.to_string()))
+        let manifest: MappingManifest =
+            serde_json::from_str(&data).map_err(|e| ArchiveError::Mapping(e.to_string()))?;
+        if manifest.version != crate::core::domain::MAPPING_VERSION {
+            return Err(ArchiveError::Mapping(format!(
+                "unsupported mapping version {} (need {})",
+                manifest.version,
+                crate::core::domain::MAPPING_VERSION
+            )));
+        }
+        for a in &manifest.archives {
+            for m in &a.members {
+                if m.sha256.is_empty() {
+                    return Err(ArchiveError::Mapping(format!(
+                        "member missing sha256: {}",
+                        m.source_relpath
+                    )));
+                }
+            }
+        }
+        Ok(manifest)
     }
 
     fn write_plan(&self, path: &Path, plan: &PackPlanFile) -> Result<(), ArchiveError> {
@@ -44,6 +63,15 @@ impl MappingStore for JsonMappingStore {
 
     fn read_plan(&self, path: &Path) -> Result<PackPlanFile, ArchiveError> {
         let data = fs::read_to_string(path)?;
-        serde_json::from_str(&data).map_err(|e| ArchiveError::Mapping(e.to_string()))
+        let plan: PackPlanFile =
+            serde_json::from_str(&data).map_err(|e| ArchiveError::Mapping(e.to_string()))?;
+        if plan.version != crate::core::domain::PLAN_FILE_VERSION {
+            return Err(ArchiveError::Mapping(format!(
+                "unsupported plan version {} (need {})",
+                plan.version,
+                crate::core::domain::PLAN_FILE_VERSION
+            )));
+        }
+        Ok(plan)
     }
 }

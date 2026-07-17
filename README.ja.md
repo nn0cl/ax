@@ -302,7 +302,7 @@ archiver --help
 | `--target-secs` | 見積の転送時間ウィンドウ（既定 45） |
 | `--throughput` | スループット上書き（バイト/秒、例: `80M`） |
 | `--measure` | 書き込み微測定（estimate / auto-size） |
-| `-f, --format` | `zip` / `tar` / `tar.gz` / `tar.zst`（**既定: tar.zst**） |
+| `-f, --format` | `zip` / `tar` / `tar.gz` / `tar.zst`（**既定: tar.zst**）。`size_estimate` / 進捗 write ETA は **アルゴリズム効率 × 拡張子ベースのコンテンツ種別**で圧縮後サイズを試算（転送完了後は実測比）。空き容量のハード判定は論理サイズのまま |
 | `--mapping` | マッピング出力パス（既定: `<output>/archiver-map.json`） |
 | `--dry-run` | 計画のみ（アーカイブ・マッピングを書かない） |
 | `-v, --verbose` | 進捗 UI に **圧縮スレッドごとの速度**（`compress0`…）を追加表示（経過/ETA は常時表示） |
@@ -316,6 +316,34 @@ archiver --help
 | `--resource-safety-factor` | 所要量見積の倍率（既定 1.0 = 残り論理サイズ相当を output に確保） |
 | `--compress-only` | 最終成果を `--output` に完結（外部メディア前提なし）。`--work-dir` 併用時は rename 優先で finalize |
 | `--volumes N` | アーカイブを最大 N 枚のボリューム `vol-001/`… に greedy 配置。容量 = 予算（単独指定時は ceil(合計/N)） |
+| `--verify-stage` | **オプション**。転送前: ステージ上のアーカイブを展開しメンバー SHA-256 を照合。転送後: 出力先アーカイブの SHA-256 がステージ時と一致すること。CPU・一時ディスク増。既定オフ |
+| `--config PATH` | 設定ファイル（`.inf` / `.ini` / `key=value`）。グローバル。`[pack]` セクション。**CLI がファイルより優先** |
+
+### 設定ファイル（`.inf` / `.ini`）
+
+```bash
+# 設定ファイルだけ（source/output/target_size 等をファイルに書く）
+archiver pack --config ./archiver.inf
+
+# ファイル + CLI 上書き
+archiver --config ./archiver.inf pack --jobs 8 --verify-stage
+```
+
+例: [`examples/archiver.inf`](examples/archiver.inf)
+
+```ini
+[pack]
+source = /data/photos
+output = /Volumes/USB
+target_size = 4G
+format = tar.zst
+jobs = 4
+work_dir = /tmp/archiver-work
+verify_stage = true
+compress_only = false
+```
+
+主な `[pack]` キー: `source`, `output`, `target_size`, `media`, `auto_size`, `volumes`, `format`, `jobs`, `mapping`, `work_dir`, `keep_stage`, `resume`, `compress_only`, `verify_stage`, `check_resources`, `force_resources`, `resource_safety_factor`, `dry_run`, `verbose`, `progress`, `connection`, `target_secs`, `throughput`, `measure`。
 
 ### compress-only / volumes の例
 
@@ -365,22 +393,19 @@ pack-out/
 
 `--work-dir` 無しだと圧縮先が output 側になり、分離の効果は限定的です。
 
-### resume の考え方
+### resume の考え方（厳格・後方互換なし）
 
-1. pack 開始時（dry-run 以外）に **`archiver-plan.json` を先に書く**
-2. 各アーカイブ完了ごとに plan を更新（`status=done` + サイズ + メンバー sha256）
-3. `--resume` 時はソースを再走査・再計画し、**メンバー集合の fingerprint**（パス+サイズ）が一致し、かつ **`--output` 上のアーカイブ**が残ってサイズ一致するユニットだけスキップ
-4. フォルダ追加・削除・サイズ変更で fingerprint が変わったユニットだけ作り直し
+1. pack 開始時（dry-run 以外）に **`archiver-plan.json`（version 2）を先に書く**
+2. 各アーカイブ完了ごとに plan を更新（`done` + **archive バイト数** + **archive_sha256** + メンバー sha256）
+3. `--resume` は **plan ファイル必須**（無いとエラー。初回 soft 開始はしない）
+4. スキップ条件（すべて必須）:
+   - メンバー fingerprint（path+size）一致
+   - output 上にアーカイブが存在
+   - サイズ一致
+   - **archive_sha256 再計算一致**（size のみの旧 plan はスキップしない）
+5. plan version 不一致もエラー（再 pack）
 
-**work-dir は resume に使いません（安全上の方針）**
-
-| 項目 | 挙動 |
-|------|------|
-| ステージパス | 毎回 `work-dir/archiver-<32hex>/` を**新規作成**（親にある他ファイルは触らない） |
-| 前回のステージ | **読まない・再利用しない** |
-| 既定 | 成功・失敗・中断のあと **ステージを常に削除**（ディスクを食いっぱなさない） |
-| `--keep-stage` | デバッグ時だけ残す（パスを表示） |
-| 信頼するもの | `archiver-plan.json` の `done` + **output 上の完成アーカイブ**（存在と byte サイズ） |
+**work-dir は resume に使いません**
 
 ```text
 --work-dir /tmp/scratch/          ← 既存 dir でよい（他ファイルがあっても OK）

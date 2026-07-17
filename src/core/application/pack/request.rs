@@ -30,6 +30,9 @@ pub struct PackRequest {
     pub compress_only: bool,
     /// Place archives under `vol-001/` … (max this many volumes).
     pub volumes: Option<u32>,
+    /// After compress: re-extract stage archive and match member SHA-256;
+    /// after transfer: require dest archive SHA-256 == stage archive SHA-256.
+    pub verify_stage: bool,
 }
 
 impl Default for PackRequest {
@@ -51,6 +54,7 @@ impl Default for PackRequest {
             resource_safety_factor: 1.0,
             compress_only: false,
             volumes: None,
+            verify_stage: false,
         }
     }
 }

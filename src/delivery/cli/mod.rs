@@ -2,6 +2,7 @@
 
 mod args;
 mod helpers;
+mod pack_config;
 
 pub use args::{Cli, Commands};
 
@@ -22,6 +23,7 @@ use crate::core::domain::{
 use crate::core::ports::NullProgress;
 use crate::delivery::progress::SingleLineProgress;
 use helpers::{handle_pack_failure, parse_format, parse_throughput, resolve_pack_budget};
+use pack_config::{resolve_pack_settings, PackCliArgs};
 use std::process::ExitCode;
 
 pub fn run(cli: Cli) -> ExitCode {
@@ -55,6 +57,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
     let meter = LocalThroughputMeter::new();
     let fs = LocalFileSystem::new();
     let hasher = Sha256Hasher::new();
+    let config_path = cli.config.clone();
 
     match cli.command {
         Commands::Create {
@@ -113,9 +116,6 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                 measure_sample_bytes: sample,
             };
             let out = EstimateTransferUnit::new(&media_probe, &meter).execute(&req)?;
-            if measure && !out.measured {
-                eprintln!("warning: write measurement failed; using table/default throughput");
-            }
             let mut report = format_estimate_report_with_meta(
                 &out.estimate,
                 Some(&out.detection),
@@ -150,7 +150,63 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             force_resources,
             resource_safety_factor,
             compress_only,
+            verify_stage,
         } => {
+            let settings = resolve_pack_settings(
+                PackCliArgs {
+                    source,
+                    output,
+                    target_size,
+                    media,
+                    auto_size,
+                    volumes,
+                    connection,
+                    target_secs,
+                    throughput,
+                    measure,
+                    format,
+                    mapping,
+                    dry_run,
+                    verbose,
+                    progress,
+                    jobs,
+                    work_dir,
+                    keep_stage,
+                    resume,
+                    check_resources,
+                    force_resources,
+                    resource_safety_factor,
+                    compress_only,
+                    verify_stage,
+                },
+                config_path.as_deref(),
+            )?;
+
+            let source = settings.source;
+            let output = settings.output;
+            let target_size = settings.target_size;
+            let media = settings.media;
+            let auto_size = settings.auto_size;
+            let volumes = settings.volumes;
+            let connection = settings.connection;
+            let target_secs = settings.target_secs;
+            let throughput = settings.throughput;
+            let measure = settings.measure;
+            let format = settings.format;
+            let mapping = settings.mapping;
+            let dry_run = settings.dry_run;
+            let verbose = settings.verbose;
+            let progress = settings.progress;
+            let jobs = settings.jobs;
+            let work_dir = settings.work_dir;
+            let keep_stage = settings.keep_stage;
+            let resume = settings.resume;
+            let check_resources = settings.check_resources;
+            let force_resources = settings.force_resources;
+            let resource_safety_factor = settings.resource_safety_factor;
+            let compress_only = settings.compress_only;
+            let verify_stage = settings.verify_stage;
+
             let line_progress =
                 SingleLineProgress::new(progress && !dry_run, verbose, jobs.max(1));
             let resources = LocalResourceProbe::new();
@@ -159,6 +215,9 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                     "warning: progress UI disabled (no controlling terminal); \
                      try running without redirect, or check /dev/tty"
                 );
+            }
+            if let Some(ref p) = settings.config_path {
+                line_progress.status_message(&format!("config={}", p.display()));
             }
 
             let budget = if auto_size {
@@ -178,9 +237,6 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                     measure_sample_bytes: 64 * 1024 * 1024,
                 };
                 let out = EstimateTransferUnit::new(&media_probe, &meter).execute(&req)?;
-                if measure && !out.measured {
-                    eprintln!("warning: write measurement failed; using table/default throughput");
-                }
                 line_progress.status_message(&format!(
                     "budget {} bytes ({})",
                     out.estimate.recommended_unit_bytes,
@@ -201,6 +257,11 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             if compress_only {
                 line_progress.status_message(
                     "mode=compress-only (final pack under --output)",
+                );
+            }
+            if verify_stage {
+                line_progress.status_message(
+                    "verify_stage=on (member re-hash + archive SHA after transfer)",
                 );
             }
             if let Some(n) = volumes {
@@ -240,6 +301,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                 resource_safety_factor,
                 compress_only,
                 volumes,
+                verify_stage,
             };
 
             let packer =
@@ -297,6 +359,8 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                         || line.starts_with("warning: failed to remove stage")
                         || line.starts_with("summary:")
                         || line.starts_with("bytes:")
+                        || line.starts_with("verify_stage=")
+                        || line.starts_with("size_estimate:")
                     {
                         out.push_str(line);
                         out.push('\n');

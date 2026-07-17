@@ -129,6 +129,7 @@ where
             written_done: logical_done,
             current: current.to_string(),
             phase,
+            ratio_prior: 1.0,
         };
 
         progress.report(&snap(

@@ -29,6 +29,11 @@ NO WARRANTY — provided AS IS; use at your own risk. No SLA.",
     propagate_version = true
 )]
 pub struct Cli {
+    /// Settings file (`.inf` / `.ini` / key=value). Section `[pack]` for pack.
+    /// CLI flags override file values when both are set.
+    #[arg(long, global = true, value_name = "PATH")]
+    pub config: Option<PathBuf>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -156,11 +161,13 @@ pub enum Commands {
 
     /// Pack a source tree into media-sized archives with a JSON mapping
     Pack {
+        /// Source directory (required unless set in --config `[pack] source=`)
         #[arg(short, long)]
-        source: PathBuf,
+        source: Option<PathBuf>,
 
+        /// Output root (required unless set in --config `[pack] output=`)
         #[arg(short, long)]
-        output: PathBuf,
+        output: Option<PathBuf>,
 
         #[arg(long, conflicts_with_all = ["media", "auto_size"])]
         target_size: Option<String>,
@@ -169,7 +176,7 @@ pub enum Commands {
         media: Option<CliMedia>,
 
         /// Derive unit size from destination free space + connection throughput
-        #[arg(long, conflicts_with_all = ["target_size", "media"])]
+        #[arg(long, conflicts_with_all = ["target_size", "media"], action = clap::ArgAction::SetTrue)]
         auto_size: bool,
 
         /// Split pack into up to N volume dirs (`vol-001/` …). Capacity = budget
@@ -180,37 +187,38 @@ pub enum Commands {
         #[arg(long, value_enum)]
         connection: Option<CliConnection>,
 
-        #[arg(long, default_value_t = DEFAULT_TARGET_SECS)]
-        target_secs: u64,
+        #[arg(long)]
+        target_secs: Option<u64>,
 
         #[arg(long)]
         throughput: Option<String>,
 
         /// Measure write throughput when using --auto-size
-        #[arg(long)]
+        #[arg(long, action = clap::ArgAction::SetTrue)]
         measure: bool,
 
-        #[arg(short, long, value_enum, default_value_t = CliFormat::TarZst)]
-        format: CliFormat,
+        /// Archive format (default: tar.zst, or config `format=`)
+        #[arg(short, long, value_enum)]
+        format: Option<CliFormat>,
 
         #[arg(long)]
         mapping: Option<PathBuf>,
 
         /// Plan only; do not write archives or mapping
-        #[arg(long)]
+        #[arg(long, action = clap::ArgAction::SetTrue)]
         dry_run: bool,
 
         /// Verbose: show per-compress-thread speed lines in the progress UI
-        #[arg(long, short = 'v')]
+        #[arg(long, short = 'v', action = clap::ArgAction::SetTrue)]
         verbose: bool,
 
-        /// Live progress UI (default: on when TTY)
-        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
-        progress: bool,
+        /// Live progress UI (default: on when TTY). Config: `progress=true|false`
+        #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
+        progress: Option<bool>,
 
-        /// Parallel compress workers (default: CPU count, max 8)
-        #[arg(long, default_value_t = default_jobs())]
-        jobs: usize,
+        /// Parallel compress workers (default: CPU count max 8, or config `jobs=`)
+        #[arg(long)]
+        jobs: Option<usize>,
 
         /// Base dir for staging: creates a private random subdir, never reuses siblings.
         /// Stage is deleted by default after pack (success or failure).
@@ -218,28 +226,34 @@ pub enum Commands {
         work_dir: Option<PathBuf>,
 
         /// Keep the random stage directory after pack (debug). Default: always delete.
-        #[arg(long, requires = "work_dir")]
+        #[arg(long, action = clap::ArgAction::SetTrue)]
         keep_stage: bool,
 
         /// Resume from output/archiver-plan.json when present; if missing, start a fresh pack
-        #[arg(long)]
+        #[arg(long, action = clap::ArgAction::SetTrue)]
         resume: bool,
 
         /// Check free disk on output/work-dir and soft memory before writing (default: true)
-        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
-        check_resources: bool,
+        #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
+        check_resources: Option<bool>,
 
         /// Continue even if resource check reports insufficient free space
-        #[arg(long)]
+        #[arg(long, action = clap::ArgAction::SetTrue)]
         force_resources: bool,
 
         /// Safety multiplier for disk estimates (default 1.0 = need up to remaining logical on output)
-        #[arg(long, default_value_t = 1.0)]
-        resource_safety_factor: f64,
+        #[arg(long)]
+        resource_safety_factor: Option<f64>,
 
         /// Complete local pack under --output (prefer rename from work-dir; no USB assumption)
-        #[arg(long)]
+        #[arg(long, action = clap::ArgAction::SetTrue)]
         compress_only: bool,
+
+        /// Pre-transfer: re-extract stage archive and match member SHA-256;
+        /// post-transfer: dest archive SHA-256 must equal stage archive SHA-256.
+        /// Config: `verify_stage=true`. Default: off (extra CPU/disk I/O).
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        verify_stage: bool,
     },
 
     /// Restore a tree from a JSON mapping and scattered archives

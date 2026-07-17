@@ -91,6 +91,13 @@ archiver pack -s ./photos -o ./out --auto-size --dry-run
 archiver pack -s ./data -o ./out --target-size 700M --format zip
 archiver pack -s ./data -o ./out --media dvd --connection usb3
 
+# Optional stage integrity (member re-hash + post-transfer archive SHA)
+archiver pack -s ./data -o ./out --target-size 700M --verify-stage --work-dir /tmp/aw
+
+# Settings file (.inf / .ini); CLI overrides file — see examples/archiver.inf
+archiver pack --config ./archiver.inf
+archiver --config ./archiver.inf pack --jobs 8 --verify-stage
+
 # Restore (SHA-256 verify on by default)
 archiver restore \
   --mapping /Volumes/USB/backup/archiver-map.json \
@@ -110,7 +117,7 @@ archiver extract -d ./restored backup.zip
 | Command | Description |
 |---------|-------------|
 | `estimate -p <path> [--connection] [--target-secs] [--throughput] [--measure]` | Recommend pack unit size for fast transfer |
-| `pack -s <dir> -o <dir> (--auto-size\|--target-size\|--media) [--dry-run] [-v] [--jobs N] ...` | Media-fit multi-archive pack + JSON map |
+| `pack -s <dir> -o <dir> (--auto-size\|--target-size\|--media) [--verify-stage] [--config] ...` | Media-fit multi-archive pack + JSON map |
 | `restore -m <map.json> -d <dir> [--archives-root] [--verify true\|false]` | Restore original tree (SHA-256 verify default on) |
 | `create -o <path> [-f] <inputs...>` | One archive |
 | `list [-f] <archive>` | List members |

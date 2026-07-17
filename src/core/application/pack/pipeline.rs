@@ -26,6 +26,10 @@ pub struct PipelineParams<'a> {
     pub jobs: usize,
     pub transfer_queue: usize,
     pub compress_only: bool,
+    /// Pre-transfer member verify + post-transfer archive SHA match.
+    pub verify_stage: bool,
+    /// Content+algorithm prior ratio for write ETA (until first transfer).
+    pub ratio_prior: f64,
     pub logical_total: u64,
     pub progress: &'a dyn PackProgress,
 }
@@ -66,6 +70,8 @@ where
         jobs,
         transfer_queue,
         compress_only,
+        verify_stage,
+        ratio_prior,
         logical_total,
         progress,
     } = params;
@@ -102,6 +108,11 @@ where
     ));
     let verbose_buf: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let plan_file_mu: Arc<Mutex<PackPlanFile>> = Arc::new(Mutex::new(plan_file));
+    let ratio_prior = if ratio_prior.is_finite() && ratio_prior > 0.0 {
+        ratio_prior.clamp(0.05, 2.0)
+    } else {
+        format.prior_archive_ratio()
+    };
 
     let report = |phase: &'static str, current: &str, units: usize| {
         progress.report(&crate::core::ports::ProgressSnapshot {
@@ -113,6 +124,7 @@ where
             written_done: written_done.load(Ordering::Relaxed),
             current: current.to_string(),
             phase,
+            ratio_prior,
         });
     };
     report("start", "", already_done);
@@ -150,6 +162,7 @@ where
                         logical_total,
                         transfer_logical_xferred.load(Ordering::Relaxed),
                         transfer_written.load(Ordering::Relaxed),
+                        ratio_prior,
                     );
 
                     if let Some(parent) = final_path.parent() {
@@ -179,6 +192,7 @@ where
                                 logical_total,
                                 base_xferred,
                                 base_written.saturating_add(partial),
+                                ratio_prior,
                             );
                         },
                     )?;
@@ -187,8 +201,17 @@ where
                     transfer_logical_xferred.fetch_add(staged.logical_bytes, Ordering::Relaxed);
                     let n = transfer_units_done.fetch_add(1, Ordering::Relaxed) + 1;
 
-                    // Pack-time archive content hash (resume + integrity without re-extract).
-                    let archive_sha = hasher_xfer.hash_file(&final_path).ok();
+                    // Pack-time archive content hash (required for resume; no soft-skip).
+                    let archive_sha = hasher_xfer.hash_file(&final_path)?;
+                    if let Some(ref expected) = staged.stage_sha256 {
+                        if archive_sha != *expected {
+                            return Err(ArchiveError::HashMismatch {
+                                path: staged.archive_relpath.clone(),
+                                expected: expected.clone(),
+                                actual: archive_sha,
+                            });
+                        }
+                    }
 
                     if let Ok(mut pf) = transfer_plan.lock() {
                         if let Some(rec) = pf.units.iter_mut().find(|u| u.id == staged.id) {
@@ -207,11 +230,17 @@ where
                         logical_total,
                         transfer_logical_xferred.load(Ordering::Relaxed),
                         transfer_written.load(Ordering::Relaxed),
+                        ratio_prior,
                     );
 
                     if let Ok(mut buf) = transfer_verbose.lock() {
+                        let verify_note = if staged.stage_sha256.is_some() {
+                            " verify_stage=ok"
+                        } else {
+                            ""
+                        };
                         buf.push(format!(
-                            "transferred {n}/{units_total} {} ({written} bytes)",
+                            "transferred {n}/{units_total} {} ({written} bytes){verify_note}",
                             staged.archive_relpath
                         ));
                     }
@@ -241,6 +270,8 @@ where
                         units_total,
                         logical_total,
                         jobs,
+                        verify_stage,
+                        ratio_prior,
                         progress,
                     );
                     tx.send(staged)
@@ -272,6 +303,8 @@ where
                             units_total,
                             logical_total,
                             jobs,
+                            verify_stage,
+                            ratio_prior,
                             progress,
                         );
                         tx.send(staged).map_err(|_| {

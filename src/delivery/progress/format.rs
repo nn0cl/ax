@@ -68,6 +68,11 @@ pub fn format_block(
     show_workers: bool,
     workers: &[WorkerView],
 ) -> Vec<String> {
+    let prior = if snap.ratio_prior.is_finite() && snap.ratio_prior > 0.0 {
+        snap.ratio_prior
+    } else {
+        1.0
+    };
     let time = format_time_fields(
         elapsed,
         eta_wall_clock(
@@ -78,6 +83,7 @@ pub fn format_block(
             snap.logical_transferred,
             in_bps,
             out_bps,
+            prior,
         ),
     );
 
@@ -90,6 +96,7 @@ pub fn format_block(
         snap.logical_total,
         snap.written_done,
         snap.logical_transferred,
+        prior,
     );
     let plan_pct = if snap.units_total > 0 {
         100.0 * snap.units_done as f64 / snap.units_total as f64

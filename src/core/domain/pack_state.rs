@@ -4,7 +4,8 @@ use super::{ArchiveFormat, MappingMember, PackUnit};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-pub const PLAN_FILE_VERSION: u32 = 1;
+/// Plan schema version. v2 requires `archive_sha256` on every Done unit (no size-only resume).
+pub const PLAN_FILE_VERSION: u32 = 2;
 pub const PLAN_FILE_NAME: &str = "archiver-plan.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,11 +24,9 @@ pub struct PlanUnitRecord {
     pub fingerprint: String,
     pub members: Vec<MappingMember>,
     pub status: PlanUnitStatus,
-    /// On-disk archive size when status is Done.
-    #[serde(default)]
+    /// On-disk archive size when status is Done (`None` while pending).
     pub archive_bytes: Option<u64>,
-    /// SHA-256 of the finished archive file (pack-time); used for resume integrity.
-    #[serde(default)]
+    /// SHA-256 of the finished archive file (required when status is Done).
     pub archive_sha256: Option<String>,
 }
 
@@ -37,7 +36,6 @@ pub struct PackPlanFile {
     pub budget: u64,
     pub format: String,
     pub size_basis: String,
-    #[serde(default)]
     pub empty_directories: Vec<String>,
     pub units: Vec<PlanUnitRecord>,
 }
@@ -93,15 +91,26 @@ impl PlanUnitRecord {
         &mut self,
         members: Vec<MappingMember>,
         archive_bytes: u64,
-        archive_sha256: Option<String>,
+        archive_sha256: String,
     ) {
+        debug_assert!(!archive_sha256.is_empty());
         self.members = members;
         self.members
             .sort_by(|a, b| a.source_relpath.cmp(&b.source_relpath));
         self.fingerprint = fingerprint_members(&self.members);
         self.status = PlanUnitStatus::Done;
         self.archive_bytes = Some(archive_bytes);
-        self.archive_sha256 = archive_sha256;
+        self.archive_sha256 = Some(archive_sha256);
+    }
+
+    /// Done units must have size + non-empty archive SHA-256 (plan v2).
+    pub fn is_complete_done(&self) -> bool {
+        self.status == PlanUnitStatus::Done
+            && self.archive_bytes.is_some()
+            && self
+                .archive_sha256
+                .as_ref()
+                .is_some_and(|h| !h.is_empty())
     }
 }
 

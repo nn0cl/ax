@@ -5,13 +5,14 @@ mod plan_resume;
 mod preflight;
 mod request;
 mod stage;
+mod stage_verify;
 mod unit_work;
 
 pub use request::{default_mapping_path, PackFailure, PackRequest, PackResult};
 
 use crate::core::domain::{
-    budget_from_volume_count, human_bytes, ArchiveError, MappingArchive, MappingManifest,
-    MemberSpec, PlanUnitStatus, PLAN_FILE_NAME,
+    budget_from_volume_count, estimate_archive_for_sources, human_bytes, ArchiveError,
+    MappingArchive, MappingManifest, MemberSpec, PlanUnitStatus, PLAN_FILE_NAME,
 };
 use crate::core::ports::{
     ArchiveEngine, ContentHasher, FileScanner, FileSystem, MappingStore, NullProgress,
@@ -148,19 +149,18 @@ where
         let mut messages = Vec::new();
 
         let previous = if req.resume {
-            if self.fs.exists(&plan_path) {
-                Some(self.mapping.read_plan(&plan_path)?)
-            } else {
-                messages.push(format!(
-                    "resume: no plan at {} — starting fresh pack (first run is OK)",
+            if !self.fs.exists(&plan_path) {
+                return Err(ArchiveError::Mapping(format!(
+                    "--resume requires existing plan file: {}",
                     plan_path.display()
-                ));
-                None
+                )));
             }
+            Some(self.mapping.read_plan(&plan_path)?)
         } else {
             None
         };
 
+        let ratio_prior = req.format.prior_archive_ratio();
         progress.report(&ProgressSnapshot {
             units_done: 0,
             units_total: 0,
@@ -170,6 +170,7 @@ where
             written_done: 0,
             current: req.source.display().to_string(),
             phase: "scan",
+            ratio_prior,
         });
 
         let (files, empty_dirs) = self.scanner.scan_tree_with_progress(
@@ -184,6 +185,7 @@ where
                     written_done: 0,
                     current: sp.current,
                     phase: "scan",
+                    ratio_prior,
                 });
             },
         )?;
@@ -212,13 +214,11 @@ where
         )?;
         messages.extend(plan_msgs);
 
-        let (skipped, redo) = apply_resume(
-            self.fs,
-            self.hasher,
-            &req.output,
-            &mut plan_file,
-            previous.as_ref(),
-        )?;
+        let (skipped, redo) = if let Some(ref prev) = previous {
+            apply_resume(self.fs, self.hasher, &req.output, &mut plan_file, prev)?
+        } else {
+            (0, plan_file.units.len())
+        };
 
         messages.push(format!(
             "budget={} units={} empty_dirs={}",
@@ -226,6 +226,15 @@ where
             plan.units.len(),
             plan.empty_directories.len()
         ));
+        // Content class (extension) × algorithm prior for write ETA / size_estimate.
+        let content_est = estimate_archive_for_sources(
+            plan.units
+                .iter()
+                .flat_map(|u| u.files.iter().map(|f| (f.rel_path.as_str(), f.size))),
+            req.format,
+        );
+        let ratio_prior = content_est.ratio;
+        messages.push(content_est.summary_line());
         if req.compress_only {
             messages.push(
                 "mode=compress-only (complete pack under --output; no external media assumed)"
@@ -233,11 +242,10 @@ where
             );
         }
         if req.resume {
-            if previous.is_some() {
-                messages.push(format!(
-                    "resume: skipped_done={skipped} need_build={redo} (fingerprint match; tree changes redo units)"
-                ));
-            }
+            messages.push(format!(
+                "resume: skipped_done={skipped} need_build={redo} \
+                 (fingerprint + size + archive_sha256; no legacy size-only)"
+            ));
         }
         if let Some(wd) = &req.work_dir {
             messages.push(format!(
@@ -273,6 +281,7 @@ where
                 transfer_queue,
                 req.resource_safety_factor,
                 req.force_resources,
+                req.format,
                 &mut messages,
             )?;
         }
@@ -340,9 +349,16 @@ where
         };
         messages.push(format!(
             "pipeline: compress_jobs={jobs} transfer_threads=1 queue={transfer_queue} \
-             order=small_first finalize={finalize_label} units_to_build={}",
+             order=small_first finalize={finalize_label} verify_stage={} units_to_build={}",
+            req.verify_stage,
             prepared.len()
         ));
+        if req.verify_stage {
+            messages.push(
+                "verify_stage=on (pre-transfer member SHA-256 + post-transfer archive blob SHA-256)"
+                    .into(),
+            );
+        }
 
         let units_total = plan_file.units.len();
         let outcome = run_pipeline(
@@ -356,6 +372,8 @@ where
                 jobs,
                 transfer_queue,
                 compress_only: req.compress_only,
+                verify_stage: req.verify_stage,
+                ratio_prior,
                 logical_total,
                 progress,
             },
@@ -386,6 +404,7 @@ where
             written_done: outcome.written_done,
             current: "archiver-map.json".into(),
             phase: "write-map",
+            ratio_prior,
         });
 
         let archives: Vec<MappingArchive> = final_plan
@@ -424,14 +443,25 @@ where
             written_done: outcome.written_done,
             current: req.mapping_path.display().to_string(),
             phase: "done",
+            ratio_prior,
         });
         progress.finish();
 
         messages.extend(outcome.verbose_lines);
         messages.push(format!("mapping: {}", req.mapping_path.display()));
+        let actual_ratio = if outcome.logical_done > 0 {
+            outcome.written_done as f64 / outcome.logical_done as f64
+        } else {
+            0.0
+        };
         messages.push(format!(
-            "bytes: logical_in={} archive_out={}",
-            outcome.logical_done, outcome.written_done
+            "bytes: logical_in={} archive_out={} content_prior_est={} actual_ratio={:.3} \
+             (content+algo prior was {:.3})",
+            outcome.logical_done,
+            outcome.written_done,
+            content_est.estimated_archive_bytes,
+            actual_ratio,
+            ratio_prior,
         ));
 
         let elapsed = wall_start.elapsed().as_secs_f64();

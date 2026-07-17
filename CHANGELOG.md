@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Optional pack integrity: `--verify-stage` / config `verify_stage=true`
+  - Pre-transfer: extract staged archive and re-check member SHA-256
+  - Post-transfer: dest archive SHA-256 must equal stage archive SHA-256
+- Settings file: global `--config PATH` (`.inf` / `.ini`); `[pack]` section; CLI overrides file
+- Example: `examples/archiver.inf`
+- Format-aware compressed size **estimate** (algorithm prior):
+  - `tar` ≈ 1.02, `zip` ≈ 0.70, `tar.gz` ≈ 0.65, `tar.zst` ≈ 0.55
+  - Used for progress write % / ETA until first transfer; then empirical ratio
+  - Logged as `size_estimate:` / resource informational line (free-space gate still logical worst-case)
+- Content-class + algorithm estimate: extension → class (text/source/image/video/…)
+  × format efficiency (`ratio ≈ 1 - (1 - base_zstd) * eff`); class breakdown in `size_estimate:`
+
+### Removed / breaking
+
+- No legacy resume: plan **v2** only; Done units require **archive_sha256** (size-only skip removed)
+- `--resume` without plan file is an **error** (no soft “start fresh”)
+- Mapping members require non-empty **sha256** (no serde default empty)
+- `--measure` failure no longer falls back to table throughput
+- Mapping/plan version mismatch is a hard error
+
 ## [0.0.1] - 2026-07-17
 
 Initial product-oriented release of the media-fit archiver.

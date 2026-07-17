@@ -17,6 +17,9 @@ pub struct ProgressSnapshot {
     pub current: String,
     /// Short phase: "hash", "compress", "write-map", "done", "scan", "plan", "transfer".
     pub phase: &'static str,
+    /// Format prior `archive/logical` used until the first transfer completes.
+    /// See [`ArchiveFormat::prior_archive_ratio`](crate::core::domain::ArchiveFormat::prior_archive_ratio).
+    pub ratio_prior: f64,
 }
 
 /// Optional sink for pack progress (implemented in delivery).

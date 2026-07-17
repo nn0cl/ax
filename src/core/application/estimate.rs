@@ -75,8 +75,9 @@ impl<'a, P: MediaProbe, T: ThroughputMeter> EstimateTransferUnit<'a, P, T> {
                     measured = true;
                 }
                 Err(e) => {
-                    // Fall back to table; surface as non-fatal via detection note.
-                    let _ = e;
+                    return Err(ArchiveError::MeasureFailed(format!(
+                        "--measure failed (no table fallback): {e}"
+                    )));
                 }
             }
         }

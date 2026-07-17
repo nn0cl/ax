@@ -133,6 +133,77 @@ fn verify_fails_when_archive_missing() {
 }
 
 #[test]
+fn pack_with_verify_stage_succeeds() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    write_file(&source.join("docs/a.txt"), b"verify-stage-payload");
+
+    let output = dir.path().join("out");
+    let work = dir.path().join("work");
+    archiver()
+        .args([
+            "pack",
+            "--source",
+            source.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--target-size",
+            "1M",
+            "--format",
+            "zip",
+            "--work-dir",
+            work.to_str().unwrap(),
+            "--verify-stage",
+            "--jobs",
+            "1",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("verify_stage=on").or(predicate::str::contains("1 archive")));
+
+    let map = output.join("archiver-map.json");
+    assert!(map.exists());
+    archiver()
+        .args(["verify", "--mapping", map.to_str().unwrap()])
+        .assert()
+        .success();
+}
+
+#[test]
+fn pack_from_config_inf() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    write_file(&source.join("docs/a.txt"), b"from-inf");
+    let output = dir.path().join("out");
+    let conf = dir.path().join("run.inf");
+    fs::write(
+        &conf,
+        format!(
+            r#"[pack]
+source = {}
+output = {}
+target_size = 1M
+format = zip
+jobs = 1
+verify_stage = true
+"#,
+            source.display(),
+            output.display()
+        ),
+    )
+    .unwrap();
+
+    archiver()
+        .args(["pack", "--config", conf.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 archive"));
+
+    assert!(output.join("archiver-map.json").exists());
+    assert!(output.join("docs/part-0001.zip").exists());
+}
+
+#[test]
 fn pack_splits_same_folder_when_over_budget() {
     let dir = tempdir().unwrap();
     let source = dir.path().join("src");
@@ -454,11 +525,16 @@ fn pack_dry_run_writes_nothing() {
             output.to_str().unwrap(),
             "--target-size",
             "1M",
+            "--format",
+            "tar.zst",
             "--dry-run",
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("dry-run"));
+        .stdout(predicate::str::contains("dry-run"))
+        .stdout(predicate::str::contains("size_estimate:"))
+        .stdout(predicate::str::contains("algo_eff="))
+        .stdout(predicate::str::contains("classes="));
 
     let entries: Vec<_> = fs::read_dir(&output)
         .unwrap()
@@ -534,7 +610,7 @@ fn estimate_shows_detection() {
 }
 
 #[test]
-fn pack_resume_without_plan_starts_fresh() {
+fn pack_resume_without_plan_fails() {
     let dir = tempdir().unwrap();
     let source = dir.path().join("src");
     write_file(&source.join("a.txt"), b"x");
@@ -554,8 +630,8 @@ fn pack_resume_without_plan_starts_fresh() {
             "--resume",
         ])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("starting fresh pack"));
+        .failure()
+        .stderr(predicate::str::contains("--resume requires existing plan"));
 }
 
 #[test]

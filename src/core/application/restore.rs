@@ -73,7 +73,10 @@ where
             for archive in &manifest.archives {
                 for member in &archive.members {
                     if member.sha256.is_empty() {
-                        continue;
+                        return Err(ArchiveError::Mapping(format!(
+                            "member missing sha256 (required): {}",
+                            member.source_relpath
+                        )));
                     }
                     let path = safe_join(&req.dest, &member.source_relpath)?;
                     let actual = self.hasher.hash_file(&path)?;

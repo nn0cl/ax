@@ -1,0 +1,43 @@
+# Example pack settings for archiver (INI / .inf style).
+# Usage:
+#   archiver pack --config examples/archiver.inf
+#   archiver --config ./archiver.inf pack --verify-stage   # CLI overrides / extra flags
+#
+# Priority: CLI flags > this file > built-in defaults.
+# Section name is [pack] (case-insensitive). Keys are case-insensitive.
+# Comments: # or ;  |  Booleans: true/false yes/no on/off 1/0
+
+[pack]
+# Required unless passed on CLI:
+# source = /path/to/source
+# output = /path/to/output
+
+# Budget (one of):
+# target_size = 4G
+# media = dvd
+# auto_size = true
+# volumes = 2
+
+# format = tar.zst
+# jobs = 4
+# mapping = /path/to/archiver-map.json
+
+# work_dir = /tmp/archiver-work
+# keep_stage = false
+# resume = false
+# compress_only = false
+
+# Pre-transfer member SHA-256 re-check inside staged archive +
+# post-transfer archive blob SHA-256 must match stage:
+verify_stage = false
+
+# check_resources = true
+# force_resources = false
+# resource_safety_factor = 1.0
+# dry_run = false
+# verbose = false
+# progress = true
+# connection = usb3
+# target_secs = 45
+# throughput = 80M
+# measure = false

@@ -56,6 +56,47 @@ impl ArchiveFormat {
     pub fn file_extension(self) -> &'static str {
         self.as_str()
     }
+
+    /// Relative compression efficiency vs zstd (1.0 = zstd baseline).
+    ///
+    /// Used with content-class base ratios:
+    /// `ratio ≈ 1 - (1 - base_zstd) * efficiency`.
+    /// Store formats return 0 (no compression).
+    pub fn compression_efficiency(self) -> f64 {
+        match self {
+            Self::Tar => 0.0,
+            Self::TarZst => 1.0,
+            Self::TarGz => 0.88,
+            Self::Zip => 0.82,
+        }
+    }
+
+    /// Fallback prior when file list is unavailable (mixed-content assumption).
+    ///
+    /// Prefer [`crate::core::domain::estimate_archive_for_sources`] when paths
+    /// and sizes are known. Hard free-space checks still use logical size.
+    pub fn prior_archive_ratio(self) -> f64 {
+        match self {
+            // Store + 512-byte tar block padding / headers.
+            Self::Tar => 1.02,
+            // Deflate, mixed general content (moderate prior).
+            Self::Zip => 0.70,
+            // gzip level default-ish mixed content.
+            Self::TarGz => 0.65,
+            // zstd typically better ratio than gzip on mixed data.
+            Self::TarZst => 0.55,
+        }
+    }
+
+    /// One-line label for logs: `tar.zst prior=0.55 eff=1.00`.
+    pub fn prior_ratio_label(self) -> String {
+        format!(
+            "{} prior={:.2} eff={:.2}",
+            self.as_str(),
+            self.prior_archive_ratio(),
+            self.compression_efficiency()
+        )
+    }
 }
 
 #[cfg(test)]
@@ -87,5 +128,29 @@ mod tests {
             ArchiveFormat::TarZst
         );
         assert!(ArchiveFormat::from_path(&PathBuf::from("noext")).is_err());
+    }
+
+    #[test]
+    fn prior_ratios_order_by_algorithm() {
+        // store ≈ 1; deflate/gzip mid; zstd typically tightest prior among compressors
+        assert!(ArchiveFormat::Tar.prior_archive_ratio() > 1.0);
+        assert!(ArchiveFormat::Zip.prior_archive_ratio() < 1.0);
+        assert!(ArchiveFormat::TarGz.prior_archive_ratio() < ArchiveFormat::Zip.prior_archive_ratio());
+        assert!(
+            ArchiveFormat::TarZst.prior_archive_ratio() < ArchiveFormat::TarGz.prior_archive_ratio()
+        );
+    }
+
+    #[test]
+    fn efficiency_order() {
+        assert_eq!(ArchiveFormat::Tar.compression_efficiency(), 0.0);
+        assert!(
+            ArchiveFormat::TarZst.compression_efficiency()
+                > ArchiveFormat::TarGz.compression_efficiency()
+        );
+        assert!(
+            ArchiveFormat::TarGz.compression_efficiency()
+                > ArchiveFormat::Zip.compression_efficiency()
+        );
     }
 }

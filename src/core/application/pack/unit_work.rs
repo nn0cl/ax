@@ -1,5 +1,6 @@
 //! Per-unit compress work and staged-file finalize helpers.
 
+use super::stage_verify::verify_members_in_archive;
 use crate::core::domain::{ArchiveError, ArchiveFormat, MappingMember, MemberSpec, PackUnit};
 use crate::core::interrupt;
 use crate::core::ports::{
@@ -23,8 +24,11 @@ pub struct StagedUnit {
     pub logical_bytes: u64,
     pub mapped_members: Vec<MappingMember>,
     pub staged_path: PathBuf,
+    /// SHA-256 of staged archive blob when `verify_stage` ran (pre-transfer).
+    pub stage_sha256: Option<String>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn report_xfer(
     progress: &dyn PackProgress,
     phase: &'static str,
@@ -35,6 +39,7 @@ pub fn report_xfer(
     logical_total: u64,
     logical_transferred: u64,
     written_done: u64,
+    ratio_prior: f64,
 ) {
     progress.report(&ProgressSnapshot {
         units_done,
@@ -45,6 +50,7 @@ pub fn report_xfer(
         written_done,
         current: current.to_string(),
         phase,
+        ratio_prior,
     });
 }
 
@@ -64,12 +70,10 @@ pub fn finalize_staged<F: FileSystem>(
         on_progress(n, n);
         return Ok(n);
     }
-    if prefer_rename {
-        if fs.rename(staged, final_path).is_ok() {
-            let n = fs.file_len(final_path)?;
-            on_progress(n, n);
-            return Ok(n);
-        }
+    if prefer_rename && fs.rename(staged, final_path).is_ok() {
+        let n = fs.file_len(final_path)?;
+        on_progress(n, n);
+        return Ok(n);
     }
     let n = fs.copy_file_with_progress(staged, final_path, on_progress)?;
     if cleanup_stage {
@@ -85,6 +89,7 @@ fn compress_worker_id(jobs: usize) -> usize {
 }
 
 /// Hash members + compress one unit to stage or `.partial` under output.
+#[allow(clippy::too_many_arguments)]
 pub fn compress_one<E, H, F>(
     p: &PreparedUnit,
     engine: &E,
@@ -100,6 +105,8 @@ pub fn compress_one<E, H, F>(
     units_total: usize,
     logical_total: u64,
     jobs: usize,
+    verify_stage: bool,
+    ratio_prior: f64,
     progress: &dyn PackProgress,
 ) -> Result<StagedUnit, ArchiveError>
 where
@@ -117,6 +124,7 @@ where
         written_done: written_done.load(Ordering::Relaxed),
         current: p.archive_relpath.clone(),
         phase,
+        ratio_prior,
     };
 
     progress.report_worker(wid, "hash", &p.archive_relpath, 0);
@@ -151,7 +159,26 @@ where
     progress.report_worker(wid, "compress", &p.archive_relpath, 0);
     progress.report(&snap("compress"));
     engine.create_members(format, &staged_path, &p.members)?;
-    progress.report_worker(wid, "idle", "", 0);
+
+    let stage_sha256 = if verify_stage {
+        progress.report_worker(wid, "verify-stage", &p.archive_relpath, 0);
+        progress.report(&snap("verify-stage"));
+        verify_members_in_archive(
+            engine,
+            fs,
+            hasher,
+            format,
+            &staged_path,
+            &mapped_members,
+        )?;
+        interrupt::check()?;
+        let sha = hasher.hash_file(&staged_path)?;
+        progress.report_worker(wid, "idle", "", 0);
+        Some(sha)
+    } else {
+        progress.report_worker(wid, "idle", "", 0);
+        None
+    };
 
     Ok(StagedUnit {
         id: p.id.clone(),
@@ -159,5 +186,6 @@ where
         logical_bytes: p.unit.logical_bytes(),
         mapped_members,
         staged_path,
+        stage_sha256,
     })
 }

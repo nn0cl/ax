@@ -1,8 +1,8 @@
 //! Disk/memory preflight before pack writes.
 
 use crate::core::domain::{
-    estimate_disk_requirement, evaluate_resources, ArchiveError, PlanUnitRecord, PlanUnitStatus,
-    ResourceLevel, ResourcePlanInput,
+    estimate_archive_for_sources, estimate_disk_requirement, evaluate_resources, ArchiveError,
+    ArchiveFormat, PlanUnitRecord, PlanUnitStatus, ResourceLevel, ResourcePlanInput,
 };
 use crate::core::ports::ResourceProbe;
 use std::path::Path;
@@ -17,6 +17,7 @@ pub fn transfer_queue_depth(jobs: usize, use_work_dir: bool) -> usize {
 }
 
 /// Append `resource:` messages; hard-fail unless `force`.
+#[allow(clippy::too_many_arguments)]
 pub fn check_resources(
     resources: &dyn ResourceProbe,
     output: &Path,
@@ -26,6 +27,7 @@ pub fn check_resources(
     transfer_queue: usize,
     safety_factor: f64,
     force: bool,
+    format: ArchiveFormat,
     messages: &mut Vec<String>,
 ) -> Result<(), ArchiveError> {
     let pending: Vec<&PlanUnitRecord> = units
@@ -39,6 +41,7 @@ pub fn check_resources(
     let remaining_logical: u64 = pending.iter().map(|u| u.logical_bytes).sum();
     let max_unit = pending.iter().map(|u| u.logical_bytes).max().unwrap_or(0);
     let use_work_dir = work_dir.is_some();
+    // Hard free-space check stays logical × safety (worst case; already-compressed data).
     let disk_need = estimate_disk_requirement(&ResourcePlanInput {
         remaining_logical_bytes: remaining_logical,
         max_unit_logical_bytes: max_unit,
@@ -47,6 +50,24 @@ pub fn check_resources(
         use_work_dir,
         safety_factor,
     });
+    let content_est = estimate_archive_for_sources(
+        pending.iter().flat_map(|u| {
+            u.members
+                .iter()
+                .map(|m| (m.source_relpath.as_str(), m.size))
+        }),
+        format,
+    );
+    messages.push(format!(
+        "resource: compressed_estimate {}",
+        content_est
+            .summary_line()
+            .trim_start_matches("size_estimate: ")
+    ));
+    messages.push(
+        "resource: free-space gate uses logical × safety (worst case); content prior is informational"
+            .into(),
+    );
 
     let out_sp = resources.disk_space(output)?;
     let work_sp = if let Some(wd) = work_dir {

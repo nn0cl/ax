@@ -1,3 +1,5 @@
+mod config_file;
+mod content_class;
 mod error;
 mod format;
 mod mapping;
@@ -10,6 +12,11 @@ mod transfer_estimate;
 mod volume_assign;
 mod write_estimate;
 
+pub use config_file::{load_ini_file, parse_ini, IniConfig};
+pub use content_class::{
+    classify_extension, classify_path, combined_ratio, estimate_archive_for_source_files,
+    estimate_archive_for_sources, ClassBreakdown, ContentAwareEstimate, ContentClass,
+};
 pub use error::ArchiveError;
 pub use format::ArchiveFormat;
 pub use mapping::{MappingArchive, MappingManifest, MappingMember, MAPPING_VERSION};
@@ -36,8 +43,9 @@ pub use volume_assign::{
     assign_volume_paths, budget_from_volume_count, count_volumes_needed,
 };
 pub use write_estimate::{
-    compression_ratio, estimated_total_write_bytes, eta_input_secs, eta_transfer_secs,
-    eta_wall_clock, write_progress_pct, EtaBreakdown,
+    compression_ratio, compression_ratio_for_format, estimate_archive_bytes,
+    estimated_total_write_bytes, eta_input_secs, eta_transfer_secs, eta_wall_clock,
+    write_progress_pct, EtaBreakdown,
 };
 
 /// Metadata for one member inside an archive.

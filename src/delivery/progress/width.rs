@@ -74,8 +74,9 @@ pub fn truncate_middle(s: &str, max_cols: usize) -> String {
     )
 }
 
-/// Hard-cap a finished row to [`ROW_COLS`] (80).
+/// Hard-cap a finished row to [`ROW_COLS`] (80). Public alias for ADR 0024 default.
 #[inline]
+#[allow(dead_code)] // used by tests; call sites prefer `fit_row_to` with Layout
 pub fn fit_row(s: impl Into<String>) -> String {
     fit_row_to(s, ROW_COLS)
 }

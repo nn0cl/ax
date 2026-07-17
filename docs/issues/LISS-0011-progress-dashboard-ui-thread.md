@@ -4,8 +4,8 @@
 
 - Local issue ID: LISS-0011
 - GitHub issue / PR: https://github.com/nn0cl/ax/pull/4
-- Status: in_review
-- Phase: Phase 3 (refactor) / Fast Path with compact design note
+- Status: done
+- Phase: complete (merged PR #4)
 - Type: feature / refactor
 - Priority: P1
 - Initial planning size: M
@@ -120,4 +120,4 @@ horizontal jitter, or line garble.
 - [x] `cargo test`
 - [x] `cargo clippy --lib -- -D warnings` (and broader as available)
 - [x] `cargo build --release`
-- [ ] PR CI green / merge to main
+- [x] Merged to main (PR #4)

@@ -61,7 +61,6 @@ Fast Path / readability refactor with compact design notes
 
 ## Handoff
 
-- PR: https://github.com/nn0cl/ax/pull/4
-- Merge when CI green.
-- Operator: `target/release/ax pa …` on a real TTY; try `stty cols 80` and `120`.
+- PR: https://github.com/nn0cl/ax/pull/4 — **merged** to `main` (squash).
+- Operator: `ax pa …` on a real TTY; try `stty cols 80` and `120`.
 - Auto jobs: `ax pa … --at --connection usb3 --work-dir /tmp/…`

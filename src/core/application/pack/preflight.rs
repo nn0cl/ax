@@ -16,6 +16,12 @@ pub fn transfer_queue_depth(jobs: usize, use_work_dir: bool) -> usize {
     }
 }
 
+/// Stage channel bound for low free-space / `--max-use` mode: rendezvous (0).
+/// Compress blocks until transfer receives, so only **one** staged primary exists.
+pub fn transfer_queue_depth_serial() -> usize {
+    0
+}
+
 /// Append `resource:` messages; hard-fail unless `force`.
 #[allow(clippy::too_many_arguments)]
 pub fn check_resources(
@@ -101,4 +107,15 @@ pub fn check_resources(
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serial_queue_is_rendezvous() {
+        assert_eq!(transfer_queue_depth_serial(), 0);
+        assert!(transfer_queue_depth(4, true) >= 8);
+    }
 }

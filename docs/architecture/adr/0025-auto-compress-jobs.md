@@ -81,13 +81,25 @@ jobs = min(cpu_cap, units_pending, io_cap, file_heuristic)
 - **No work-dir** and not compress-only: multiply cap by ~¾ (output contention).
 - **With work-dir**: allow one extra slot up to the class ceiling.
 
-### 4. Explicit non-goals (this ADR)
+### 4. Related: `--max-use` (serial low free-space mode)
+
+Not auto-jobs, but related operator control:
+
+| Flag | Effect |
+|------|--------|
+| `--max-use 4G` | Cap **unit budget** to ≤ 4G; force **jobs=1** and **stage queue=0** (rendezvous). Pipeline: compress one → transfer → delete stage → next. |
+
+Use when free space is tight: only one primary archive occupies stage at a time.
+Config: `max_use=4G`. A single source file larger than the cap may still exceed it
+(existing over-budget whole-file rule).
+
+### 5. Explicit non-goals (this ADR)
 
 - Mid-pack dynamic rayon resize / “elastic” thread count.
 - Per-file parallelism inside one unit.
 - Guaranteeing optimal wall-clock on every medium (AS IS; ADR 0014).
 
-### 5. Idle threads
+### 6. Idle threads
 
 Idle compress slots **do not monopolize CPU**; the OS can schedule other
 processes. Reducing N mid-run is therefore **not** required for multi-tenant

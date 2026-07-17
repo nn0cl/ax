@@ -193,5 +193,6 @@ jobs:
       - name: cargo test
         run: cargo test
 
-      - name: cargo clippy
+      # Same gate as scripts/git-hooks/pre-push (full targets, warnings as errors).
+      - name: cargo clippy (all-targets, -D warnings)
         run: cargo clippy --all-targets -- -D warnings

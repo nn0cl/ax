@@ -104,6 +104,13 @@ pub trait FileSystem: Sync {
     fn remove_file(&self, path: &Path) -> Result<(), ArchiveError>;
     fn remove_dir_all(&self, path: &Path) -> Result<(), ArchiveError>;
     fn rename(&self, from: &Path, to: &Path) -> Result<(), ArchiveError>;
+
+    /// Atomically create a new file with `contents` (fails if it already exists).
+    /// Used for exclusive pack locks.
+    fn create_new_file(&self, path: &Path, contents: &[u8]) -> Result<(), ArchiveError>;
+
+    /// Read entire file as UTF-8 (lossy not used — invalid UTF-8 → error string path).
+    fn read_to_string(&self, path: &Path) -> Result<String, ArchiveError>;
 }
 
 /// Streaming content hash (SHA-256 hex lowercase).

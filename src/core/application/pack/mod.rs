@@ -1,5 +1,6 @@
 //! Media-fit pack use case (orchestrates plan → pipeline → mapping).
 
+mod lock;
 mod pipeline;
 mod plan_resume;
 mod preflight;
@@ -144,9 +145,26 @@ where
             ensure_work_dir_base(self.fs, wd)?;
         }
 
+        // Exclusive lock on output (+ work-dir base): concurrent pack is unsupported.
+        // Dry-run still locks briefly so two dry-runs cannot clobber the same plan path.
+        let _pack_locks = lock::acquire_pack_locks(
+            self.fs,
+            &req.output,
+            req.work_dir.as_deref(),
+        )?;
+
         let wall_start = Instant::now();
         let plan_path = req.output.join(PLAN_FILE_NAME);
         let mut messages = Vec::new();
+        messages.push(format!(
+            "lock: acquired {} ({})",
+            lock::PACK_LOCK_NAME,
+            if req.work_dir.is_some() {
+                "output+work_dir"
+            } else {
+                "output"
+            }
+        ));
 
         let previous = if req.resume {
             if !self.fs.exists(&plan_path) {
@@ -192,7 +210,7 @@ where
         let logical_total: u64 = files.iter().map(|f| f.size).sum();
         let file_count = files.len();
 
-        let budget = if req.budget > 0 {
+        let mut budget = if req.budget > 0 {
             req.budget
         } else if let Some(n) = req.volumes {
             let b = budget_from_volume_count(logical_total, n);
@@ -203,6 +221,25 @@ where
         } else {
             return Err(ArchiveError::InvalidBudget);
         };
+
+        // `--max-use`: cap primary archive unit size; force serial pipeline later.
+        if let Some(cap) = req.max_use.filter(|&c| c > 0) {
+            if budget > cap {
+                messages.push(format!(
+                    "max_use={}: budget {} → {} (primary archive units ≤ max_use)",
+                    human_bytes(cap),
+                    human_bytes(budget),
+                    human_bytes(cap)
+                ));
+                budget = cap;
+            } else {
+                messages.push(format!(
+                    "max_use={}: budget already ≤ cap ({})",
+                    human_bytes(cap),
+                    human_bytes(budget)
+                ));
+            }
+        }
 
         let (plan, mut plan_file, plan_msgs) = build_pack_plan(
             files,
@@ -335,7 +372,7 @@ where
             work_dir: req.work_dir.is_some(),
             compress_only: req.compress_only,
         };
-        let jobs = crate::core::domain::resolve_compress_jobs(
+        let mut jobs = crate::core::domain::resolve_compress_jobs(
             if req.jobs_explicit {
                 Some(req.jobs)
             } else {
@@ -344,8 +381,16 @@ where
             req.auto_jobs,
             &aj,
         );
+        // Low free-space mode: one primary at a time — compress → transfer → delete stage.
+        let serial_max_use = req.max_use.filter(|&c| c > 0).is_some();
+        if serial_max_use && jobs != 1 {
+            messages.push(format!(
+                "max_use: forcing jobs 1 (serial compress→transfer→delete); was {jobs}"
+            ));
+            jobs = 1;
+        }
         progress.set_jobs(jobs);
-        if req.auto_jobs && !req.jobs_explicit {
+        if req.auto_jobs && !req.jobs_explicit && !serial_max_use {
             let io = crate::core::domain::io_jobs_cap(
                 req.connection,
                 req.throughput_bps,
@@ -355,7 +400,7 @@ where
             let conn = crate::core::domain::connection_label(req.connection);
             let thr = req
                 .throughput_bps
-                .map(|t| crate::core::domain::human_bytes(t))
+                .map(crate::core::domain::human_bytes)
                 .unwrap_or_else(|| "default".into());
             messages.push(format!(
                 "auto_jobs: cpu={cpu} units={} files={} io_cap={io} \
@@ -366,7 +411,17 @@ where
             ));
         }
 
-        let transfer_queue = transfer_queue_depth(jobs, req.work_dir.is_some());
+        let transfer_queue = if serial_max_use {
+            preflight::transfer_queue_depth_serial()
+        } else {
+            transfer_queue_depth(jobs, req.work_dir.is_some())
+        };
+        if serial_max_use {
+            messages.push(
+                "max_use: pipeline=serial (compress one → transfer → delete stage → next)"
+                    .into(),
+            );
+        }
         if req.check_resources {
             check_resources(
                 self.resources,

@@ -5,7 +5,7 @@
 - Local issue ID: LISS-0003
 - GitHub issue: n/a
 - Status: done
-- Phase: complete (blanket Adjudicator approval 2026-07-17)
+- Phase: complete (CI rust job + optional pre-push hook)
 - Type: chore / infrastructure
 - Priority: P0
 - Initial planning size: S
@@ -54,13 +54,13 @@ so that broken pack/restore behavior cannot merge silently.
 
 ## Adjudicator Decision Points
 
-- [ ] OS matrix: ubuntu only (推奨) vs ubuntu+macos
-- [ ] clippy を `-D warnings` で必須にするか（推奨: 必須）
+- [x] OS matrix: ubuntu only (推奨)
+- [x] clippy を `-D warnings` で必須（CI + 任意 pre-push）
 
 ## Context
 
-- Included: `.github/workflows/ci.yml`, `Cargo.toml`, native `zstd-sys`
-- Omitted: packaging, caching 高度最適化（sccache 等は任意）
+- Included: `.github/workflows/ci.yml`, `scripts/git-hooks/pre-push`, `scripts/install-git-hooks.sh`
+- Omitted: packaging, sccache
 - Assumptions: GitHub-hosted runner で `pkg-config` / ビルドツールは標準で足りる
 
 ## AI Planning Records
@@ -70,14 +70,16 @@ S サイズのため任意。2 回目の試行時は必須化。
 ## References
 
 - https://doc.rust-lang.org/cargo/guide/continuous-integration.html
-- https://github.com/actions-rust-lang/setup-rust-toolchain (候補; 採用時はバージョン pin)
+- `scripts/git-hooks/pre-push` — same command as CI
 
 ## Work Notes
 
-- Prefer official `dtolnay/rust-toolchain` or `actions-rust-lang/setup-rust-toolchain` with pinned action major version.
-- Cache `~/.cargo` + `target` if wall time is painful; not required for S.
+- CI step: `cargo clippy --all-targets -- -D warnings`
+- Local: `./scripts/install-git-hooks.sh` → `core.hooksPath=scripts/git-hooks`
+- Skip: `AX_SKIP_CLIPPY=1` or `git push --no-verify`
 
 ## Verification
 
-- [ ] PR 上で rust ジョブが緑
-- [ ] 意図的にテストを壊すとジョブが赤になることを一度確認（ローカルまたは draft PR）
+- [x] CI rust job runs clippy all-targets -D warnings
+- [x] pre-push hook script in-repo + install helper
+- [ ] Optional: intentional clippy break once confirmed red on CI

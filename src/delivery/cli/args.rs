@@ -273,6 +273,11 @@ pub enum Commands {
         #[arg(long = "auto-jobs", visible_alias = "at", action = clap::ArgAction::SetTrue)]
         auto_jobs: bool,
 
+        /// Cap free-space / unit size (e.g. `4G`): primary archives ≤ this size,
+        /// and pipeline is serial — compress one → transfer → delete stage → next.
+        #[arg(long = "max-use", value_name = "SIZE")]
+        max_use: Option<String>,
+
         /// Base dir for staging (private random subdir)
         #[arg(long)]
         work_dir: Option<PathBuf>,

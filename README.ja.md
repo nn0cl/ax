@@ -344,6 +344,9 @@ ax pa --help
 | `--progress` | 固定行数の進捗ダッシュボードを TTY 上で上書き表示（既定: TTY なら true） |
 | `-j, --jobs N` | 並列圧縮ワーカー数（**既定: CPU 数、最大 8**）。指定時は `--at` より優先 |
 | `--at` / `--auto-jobs` | plan 後に jobs を自動決定: **CPU × 残 unit × ファイル数 × I/O 上限**（`--connection` / `--throughput` と `--work-dir` 有無を考慮。遅い媒体ではスレッドを抑える。既定 max 8 を外し全体上限 32）。`-j` があるときは無効 |
+| `--max-use SIZE` | 低空き容量モード。**1 次アーカイブ（unit）≤ SIZE**（例 `4G`）。同時圧縮は **1 本だけ**、処理は **圧縮 → 転送 → stage 削除 → 次** の直列。stage のピークを unit 1 本分に抑える |
+
+同一 `output` / `work-dir` への **同時 pack はロックで拒否**されます（`output/.ax-pack.lock`）。落ちたプロセスのロックが残った場合はファイルを手で削除してください（ADR 0026）。
 | `--work-dir <dir>` | ステージ用の**親ディレクトリ**。直下に `archiver-<random>/` を新規作成（既存ファイルには触れない）。**既定では成否に関わらず削除** |
 | `--keep-stage` | デバッグ用にステージを残す（`--work-dir` 必須） |
 | `--resume` | `output/archiver-plan.json` を使い、完了済みユニットを fingerprint でスキップ |
@@ -557,10 +560,16 @@ restore はこれを読んで展開し、既定でハッシュを検証します
 
 ```bash
 cargo test
-cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets -- -D warnings   # CI / pre-push と同じゲート
 ```
 
-CI（GitHub Actions）: `cargo test` と `clippy -D warnings`（Ubuntu）。
+**CI（GitHub Actions）** と **任意の pre-push hook** の両方で  
+`cargo clippy --all-targets -- -D warnings` を実行します。
+
+```bash
+./scripts/install-git-hooks.sh   # 一度だけ（core.hooksPath = scripts/git-hooks）
+# スキップ: AX_SKIP_CLIPPY=1 git push  または  git push --no-verify
+```
 
 ### ディレクトリ構成
 

@@ -20,6 +20,7 @@ Product/runtime decisions for **archiver** start at **0013**.
 | [0023](0023-pack-log-verbosity-policy.md) | Pack log verbosity | **Accepted** | quiet default; detail at -vv; dashboard ≠ -v |
 | [0024](0024-cli-screen-geometry.md) | CLI screen geometry | **Accepted** | 80-col baseline; wide 120–200; fixed nums; name·tag |
 | [0025](0025-auto-compress-jobs.md) | Auto compress jobs (`--at`) | **Accepted** | plan-time N; I/O cap; no mid-run resize |
+| [0026](0026-pack-exclusive-lock.md) | Pack exclusive lock | **Accepted** | `.ax-pack.lock` on output/work-dir |
 
 ## How these interact
 
@@ -36,6 +37,7 @@ Live progress UI (threads)   ──► ADR 0022
 Text log volume              ──► ADR 0023
 CLI screen width / geometry  ──► ADR 0024  (80 baseline; wide ≤200; labels)
 Compress parallelism / --at  ──► ADR 0025  (CPU × units × I/O; fixed after plan)
+Concurrent pack exclusion    ──► ADR 0026  (.ax-pack.lock)
 Product promises             ──► ADR 0014 + 0019
 ```
 

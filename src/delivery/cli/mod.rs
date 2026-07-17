@@ -169,6 +169,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             progress,
             jobs,
             auto_jobs,
+            max_use,
             work_dir,
             keep_stage,
             resume,
@@ -200,6 +201,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                     progress,
                     jobs,
                     auto_jobs,
+                    max_use,
                     work_dir,
                     keep_stage,
                     resume,
@@ -231,6 +233,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             let jobs = settings.jobs;
             let auto_jobs = settings.auto_jobs;
             let jobs_explicit = settings.jobs_explicit;
+            let max_use = settings.max_use;
             let work_dir = settings.work_dir;
             let keep_stage = settings.keep_stage;
             let resume = settings.resume;
@@ -327,6 +330,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                 jobs_explicit,
                 connection: connection.map(ConnectionKind::from),
                 throughput_bps,
+                max_use,
                 work_dir,
                 keep_stage,
                 resume,

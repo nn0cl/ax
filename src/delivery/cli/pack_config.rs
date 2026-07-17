@@ -2,7 +2,8 @@
 
 use super::args::{default_jobs, CliConnection, CliFormat, CliMedia};
 use crate::core::domain::{
-    auto_jobs_provisional_cap, load_ini_file, ArchiveError, IniConfig, DEFAULT_TARGET_SECS,
+    auto_jobs_provisional_cap, load_ini_file, parse_size, ArchiveError, IniConfig,
+    DEFAULT_TARGET_SECS,
 };
 use clap::ValueEnum;
 use std::path::{Path, PathBuf};
@@ -31,6 +32,8 @@ pub struct ResolvedPackSettings {
     pub auto_jobs: bool,
     /// True when `-j` or config `jobs=` fixed the count.
     pub jobs_explicit: bool,
+    /// Cap unit budget + serial pipeline (`--max-use` / config `max_use=`).
+    pub max_use: Option<u64>,
     pub work_dir: Option<PathBuf>,
     pub keep_stage: bool,
     pub resume: bool,
@@ -62,6 +65,7 @@ pub struct PackCliArgs {
     pub progress: Option<bool>,
     pub jobs: Option<usize>,
     pub auto_jobs: bool,
+    pub max_use: Option<String>,
     pub work_dir: Option<PathBuf>,
     pub keep_stage: bool,
     pub resume: bool,
@@ -208,6 +212,16 @@ pub fn resolve_pack_settings(
             .and_then(|c| c.get_bool("pack", "verify_stage").ok().flatten())
             .unwrap_or(false);
 
+    let max_use_raw = cli
+        .max_use
+        .or_else(|| pack.and_then(|c| c.get("pack", "max_use").map(|s| s.to_string())));
+    let max_use = match max_use_raw.as_deref() {
+        None => None,
+        Some(s) => Some(parse_size(s).map_err(|e| {
+            ArchiveError::Mapping(format!("max_use: {e}"))
+        })?),
+    };
+
     if keep_stage && work_dir.is_none() {
         return Err(ArchiveError::Mapping(
             "--keep-stage / keep_stage=true requires --work-dir or config work_dir=".into(),
@@ -233,6 +247,7 @@ pub fn resolve_pack_settings(
         jobs,
         auto_jobs,
         jobs_explicit,
+        max_use,
         work_dir,
         keep_stage,
         resume,
@@ -329,6 +344,7 @@ format = zip
             progress: None,
             jobs: None,
             auto_jobs: false,
+            max_use: None,
             work_dir: None,
             keep_stage: false,
             resume: false,
@@ -365,6 +381,7 @@ format = zip
             progress: None,
             jobs: Some(3),
             auto_jobs: false,
+            max_use: None,
             work_dir: None,
             keep_stage: false,
             resume: false,
@@ -414,6 +431,7 @@ verify_stage = true
             progress: None,
             jobs: Some(8),
             auto_jobs: true, // ignored when -j is set
+            max_use: None,
             work_dir: None,
             keep_stage: false,
             resume: false,
@@ -452,6 +470,7 @@ verify_stage = true
             progress: None,
             jobs: None,
             auto_jobs: true,
+            max_use: None,
             work_dir: None,
             keep_stage: false,
             resume: false,

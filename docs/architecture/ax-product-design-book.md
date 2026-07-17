@@ -39,6 +39,7 @@ docs/architecture/design-notes/       ← compact notes per change unit
 | **0023** | **Log verbosity `-v`/`-vv`** |
 | **0024** | **CLI screen geometry** (80 baseline; wide 120–200; name·tag; fixed nums) |
 | **0025** | **Auto compress jobs (`--at`)** (CPU × units × I/O; no mid-run resize) |
+| **0026** | **Pack exclusive lock** (`.ax-pack.lock` on output/work-dir) |
 
 ## Issue index (recent product)
 
@@ -51,6 +52,7 @@ docs/architecture/design-notes/       ← compact notes per change unit
 | **0013** | Size presets |
 | **0014** | Log verbosity |
 | **0015** | Auto compress jobs (`--at`, I/O-aware) |
+| **0016** | Pack exclusive lock |
 
 ## Design notes (compact)
 

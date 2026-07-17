@@ -172,7 +172,10 @@ thread only; 80-col design baseline, optional wide layout up to 200 cols; file
 labels are `name·tag` (stable path hash). See ADR 0022 / 0024 and [README.ja.md](README.ja.md)
 for field meanings. No TTY → no dashboard (logs only; `-vv` for detail).
 
-**CI:** `cargo test` + `cargo clippy -D warnings` on Ubuntu (see `.github/workflows/ci.yml`).
+**CI / pre-push:** `cargo test` and  
+`cargo clippy --all-targets -- -D warnings` (Ubuntu CI + optional local pre-push).  
+Install hooks: `./scripts/install-git-hooks.sh`  
+Skip once: `AX_SKIP_CLIPPY=1 git push` or `git push --no-verify`.
 
 Path traversal members are **rejected** on extract.
 
@@ -188,7 +191,10 @@ Path traversal members are **rejected** on extract.
 
 ```bash
 cargo test
-cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets -- -D warnings   # same as CI + pre-push
+
+# Optional: run clippy on every git push
+./scripts/install-git-hooks.sh
 ```
 
 ## Layout

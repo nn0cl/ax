@@ -94,4 +94,30 @@ impl FileSystem for LocalFileSystem {
         std::fs::rename(from, to)?;
         Ok(())
     }
+
+    fn create_new_file(&self, path: &Path, contents: &[u8]) -> Result<(), ArchiveError> {
+        use std::io::Write;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+        {
+            Ok(mut f) => {
+                f.write_all(contents)?;
+                f.sync_all()?;
+                Ok(())
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                Err(ArchiveError::AlreadyExists(path.display().to_string()))
+            }
+            Err(e) => Err(ArchiveError::Io(e)),
+        }
+    }
+
+    fn read_to_string(&self, path: &Path) -> Result<String, ArchiveError> {
+        Ok(std::fs::read_to_string(path)?)
+    }
 }

@@ -25,6 +25,9 @@ pub struct PackRequest {
     pub connection: Option<ConnectionKind>,
     /// Optional write throughput (bytes/s) for auto-jobs (CLI `--throughput` or measure).
     pub throughput_bps: Option<u64>,
+    /// Cap unit budget and force serial compress→transfer→delete (low free-space mode).
+    /// Example: `4G` → each primary archive &lt; 4G, jobs=1, stage queue=0.
+    pub max_use: Option<u64>,
     /// Base directory for a private random stage subdir (other files left alone).
     pub work_dir: Option<PathBuf>,
     /// Keep the random stage after pack. Default: always delete.
@@ -61,6 +64,7 @@ impl Default for PackRequest {
             jobs_explicit: false,
             connection: None,
             throughput_bps: None,
+            max_use: None,
             work_dir: None,
             keep_stage: false,
             resume: false,

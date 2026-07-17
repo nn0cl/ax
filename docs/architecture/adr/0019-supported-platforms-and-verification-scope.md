@@ -35,8 +35,10 @@ Not applicable.
 
 ### Concurrent use
 
-Same `output` or stage `work-dir` from two processes is **unsupported**.
-No file locking is promised in v0.x.
+Same `output` or stage `work-dir` from two pack processes is **unsupported**.
+As of **ADR 0026**, the runtime **enforces** this with exclusive lock files
+(`.ax-pack.lock`) on `output` and optional `work-dir`. A second pack fails with
+`pack busy`. Stale locks after a crash may need manual deletion.
 
 ## Consequences
 

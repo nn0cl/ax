@@ -49,13 +49,13 @@ pub fn available_cpu_threads() -> usize {
 
 /// Classic default: clamp CPU count to [`DEFAULT_JOBS_MAX`].
 pub fn default_compress_jobs() -> usize {
-    available_cpu_threads().min(DEFAULT_JOBS_MAX).max(1)
+    available_cpu_threads().clamp(1, DEFAULT_JOBS_MAX)
 }
 
 /// Provisional upper bound when auto-jobs is on (before plan is known).
 /// Progress UI may start with this many rows, then shrink after plan.
 pub fn auto_jobs_provisional_cap() -> usize {
-    available_cpu_threads().min(AUTO_JOBS_MAX).max(1)
+    available_cpu_threads().clamp(1, AUTO_JOBS_MAX)
 }
 
 /// Max concurrent compress workers suggested by media / disk class.
@@ -138,7 +138,7 @@ pub fn resolve_compress_jobs(
     }
     let cpu = ctx.cpu.max(1);
     if !auto {
-        return cpu.min(DEFAULT_JOBS_MAX).max(1);
+        return cpu.clamp(1, DEFAULT_JOBS_MAX);
     }
 
     let cpu_cap = cpu.min(AUTO_JOBS_MAX);

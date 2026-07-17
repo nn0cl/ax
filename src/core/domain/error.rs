@@ -66,4 +66,12 @@ pub enum ArchiveError {
 
     #[error("verify failed: {0}")]
     VerifyFailed(String),
+
+    /// Exclusive create failed because the path already exists (lock conflict).
+    #[error("already exists: {0}")]
+    AlreadyExists(String),
+
+    /// Another pack holds the output or work-dir lock.
+    #[error("pack busy: {0}")]
+    PackBusy(String),
 }

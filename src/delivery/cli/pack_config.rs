@@ -21,7 +21,8 @@ pub struct ResolvedPackSettings {
     pub format: CliFormat,
     pub mapping: Option<PathBuf>,
     pub dry_run: bool,
-    pub verbose: bool,
+    /// 0 = quiet, 1 = `-v`, 2+ = `-vv` (detail).
+    pub verbose: u8,
     pub progress: bool,
     pub jobs: usize,
     pub work_dir: Option<PathBuf>,
@@ -51,7 +52,7 @@ pub struct PackCliArgs {
     pub format: Option<CliFormat>,
     pub mapping: Option<PathBuf>,
     pub dry_run: bool,
-    pub verbose: bool,
+    pub verbose: u8,
     pub progress: Option<bool>,
     pub jobs: Option<usize>,
     pub work_dir: Option<PathBuf>,
@@ -137,10 +138,19 @@ pub fn resolve_pack_settings(
         || pack
             .and_then(|c| c.get_bool("pack", "dry_run").ok().flatten())
             .unwrap_or(false);
-    let verbose = cli.verbose
-        || pack
+    let verbose = {
+        let from_cli = cli.verbose;
+        let from_cfg = pack
             .and_then(|c| c.get_bool("pack", "verbose").ok().flatten())
             .unwrap_or(false);
+        if from_cli > 0 {
+            from_cli
+        } else if from_cfg {
+            1
+        } else {
+            0
+        }
+    };
     let progress = cli
         .progress
         .or_else(|| pack.and_then(|c| c.get_bool("pack", "progress").ok().flatten()))
@@ -295,7 +305,7 @@ format = zip
             format: None,
             mapping: None,
             dry_run: false,
-            verbose: false,
+            verbose: 0,
             progress: None,
             jobs: None,
             work_dir: None,
@@ -330,7 +340,7 @@ format = zip
             format: Some(CliFormat::Zip),
             mapping: None,
             dry_run: false,
-            verbose: false,
+            verbose: 0,
             progress: None,
             jobs: Some(3),
             work_dir: None,
@@ -378,7 +388,7 @@ verify_stage = true
             format: Some(CliFormat::Zip),
             mapping: None,
             dry_run: false,
-            verbose: false,
+            verbose: 0,
             progress: None,
             jobs: Some(8),
             work_dir: None,

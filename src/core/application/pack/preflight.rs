@@ -58,16 +58,6 @@ pub fn check_resources(
         }),
         format,
     );
-    messages.push(format!(
-        "resource: compressed_estimate {}",
-        content_est
-            .summary_line()
-            .trim_start_matches("size_estimate: ")
-    ));
-    messages.push(
-        "resource: free-space gate uses logical × safety (worst case); content prior is informational"
-            .into(),
-    );
 
     let out_sp = resources.disk_space(output)?;
     let work_sp = if let Some(wd) = work_dir {
@@ -76,6 +66,13 @@ pub fn check_resources(
         None
     };
     let mem = resources.available_memory_bytes();
+    messages.push(format!(
+        "resource: need≈{} free_out={} gate=logical×safety; compressed_est≈{} (prior {:.2})",
+        crate::core::domain::human_bytes(disk_need.output_bytes),
+        crate::core::domain::human_bytes(out_sp.free_bytes),
+        crate::core::domain::human_bytes(content_est.estimated_archive_bytes),
+        content_est.ratio,
+    ));
     let findings = evaluate_resources(
         out_sp.free_bytes,
         work_sp.map(|s| s.free_bytes),
@@ -84,8 +81,11 @@ pub fn check_resources(
         use_work_dir,
         jobs.max(1),
     );
+    // Skip routine Ok chatter; keep Warn/Fail only.
     for f in &findings {
-        messages.push(format!("resource: {}", f.message));
+        if f.level != ResourceLevel::Ok {
+            messages.push(format!("resource: {}", f.message));
+        }
     }
     let hard = findings
         .iter()

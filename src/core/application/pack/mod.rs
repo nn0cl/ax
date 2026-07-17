@@ -234,7 +234,17 @@ where
             req.format,
         );
         let ratio_prior = content_est.ratio;
-        messages.push(content_est.summary_line());
+        if req.verbose >= 2 {
+            messages.push(content_est.summary_line());
+        } else {
+            messages.push(format!(
+                "size_estimate: format={} logical={} archive≈{} ratio={:.3}",
+                req.format.as_str(),
+                crate::core::domain::human_bytes(content_est.logical_bytes),
+                crate::core::domain::human_bytes(content_est.estimated_archive_bytes),
+                content_est.ratio,
+            ));
+        }
         if req.compress_only {
             messages.push(
                 "mode=compress-only (complete pack under --output; no external media assumed)"
@@ -258,15 +268,26 @@ where
                 }
             ));
         }
-        for rec in &plan_file.units {
-            messages.push(format!(
-                "plan {} logical={} members={} status={:?} fp={}",
-                rec.archive_relpath,
-                rec.logical_bytes,
-                rec.members.len(),
-                rec.status,
-                &rec.fingerprint[..12.min(rec.fingerprint.len())]
-            ));
+        // Per-unit plan lines only with -vv (capped).
+        const PLAN_DETAIL_CAP: usize = 20;
+        if req.verbose >= 2 {
+            let n = plan_file.units.len();
+            for rec in plan_file.units.iter().take(PLAN_DETAIL_CAP) {
+                messages.push(format!(
+                    "plan {} logical={} members={} status={:?} fp={}",
+                    rec.archive_relpath,
+                    rec.logical_bytes,
+                    rec.members.len(),
+                    rec.status,
+                    &rec.fingerprint[..12.min(rec.fingerprint.len())]
+                ));
+            }
+            if n > PLAN_DETAIL_CAP {
+                messages.push(format!(
+                    "plan: … and {} more unit(s) (use -vv; first {PLAN_DETAIL_CAP} only)",
+                    n - PLAN_DETAIL_CAP
+                ));
+            }
         }
 
         let jobs = req.jobs.max(1);
@@ -374,6 +395,7 @@ where
                 compress_only: req.compress_only,
                 verify_stage: req.verify_stage,
                 ratio_prior,
+                log_transfers: req.verbose >= 2,
                 logical_total,
                 progress,
             },

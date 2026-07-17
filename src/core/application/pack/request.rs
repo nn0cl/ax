@@ -12,7 +12,8 @@ pub struct PackRequest {
     pub format: ArchiveFormat,
     pub mapping_path: PathBuf,
     pub dry_run: bool,
-    pub verbose: bool,
+    /// 0 quiet, 1 (`-v`) light, 2+ (`-vv`) detail (workers / per-unit logs).
+    pub verbose: u8,
     pub jobs: usize,
     /// Base directory for a private random stage subdir (other files left alone).
     pub work_dir: Option<PathBuf>,
@@ -44,7 +45,7 @@ impl Default for PackRequest {
             format: ArchiveFormat::Zip,
             mapping_path: PathBuf::new(),
             dry_run: false,
-            verbose: false,
+            verbose: 0,
             jobs: 1,
             work_dir: None,
             keep_stage: false,

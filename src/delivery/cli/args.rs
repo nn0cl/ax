@@ -256,9 +256,9 @@ pub enum Commands {
         #[arg(long, action = clap::ArgAction::SetTrue)]
         dry_run: bool,
 
-        /// Verbose: show per-compress-thread speed lines in the progress UI
-        #[arg(long, short = 'v', action = clap::ArgAction::SetTrue)]
-        verbose: bool,
+        /// Verbosity: `-v` light notes, `-vv` worker lines + per-unit plan/transfer log
+        #[arg(short = 'v', long = "verbose", action = clap::ArgAction::Count)]
+        verbose: u8,
 
         /// Live progress UI (default: on when TTY)
         #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]

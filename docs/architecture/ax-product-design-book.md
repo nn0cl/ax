@@ -35,9 +35,9 @@ docs/architecture/design-notes/       ← compact notes per change unit
 | 0019 | Support tiers |
 | **0020** | **`ax` short CLI** |
 | **0021** | **Size presets** |
-| **0022** | **Progress dashboard + UI thread** |
+| **0022** | **Progress dashboard + UI thread** (`total` / `cmp*` / `trn`) |
 | **0023** | **Log verbosity `-v`/`-vv`** |
-| **0024** | **CLI screen geometry (80-col Linux console)** |
+| **0024** | **CLI screen geometry** (80 baseline; wide 120–200; name·tag; fixed nums) |
 
 ## Issue index (recent product)
 
@@ -45,7 +45,7 @@ docs/architecture/design-notes/       ← compact notes per change unit
 |------|--------|
 | 0008–0009 | Early dry-run / progress / parallel pack |
 | 0010 | Compressed packing ADR |
-| **0011** | Progress dashboard refactor |
+| **0011** | Progress dashboard (UI thread, geometry, labels) |
 | **0012** | ax CLI (retro) |
 | **0013** | Size presets |
 | **0014** | Log verbosity |
@@ -54,7 +54,8 @@ docs/architecture/design-notes/       ← compact notes per change unit
 
 | Note | Topic |
 |------|--------|
-| `2026-07-17-liss-0011-progress-dashboard.md` | Dashboard modules + UI thread |
+| `2026-07-17-liss-0011-progress-dashboard.md` | Dashboard modules + labels + wide mode |
+| `2026-07-17-adr-0024-cli-screen-impl.md` | ADR 0024 implementation checklist |
 | `2026-07-17-ax-cli-and-presets.md` | Binary, shorts, presets |
 | `2026-07-17-pack-logging-and-verbosity.md` | Quiet default / `-vv` |
 
@@ -65,7 +66,7 @@ ax pa -i SRC -o OUT -s PRESET|SIZE -f zip|tar.zst -j N [--work-dir DIR]
         │
         ├─ scan / plan (logical budget)
         ├─ resource gate (logical × safety)
-        ├─ dashboard (TTY): total + compress* + transfer
+        ├─ dashboard (TTY): total + cmp* + trn  (ADR 0022/0024)
         └─ mapping + plan files under OUT
 ```
 

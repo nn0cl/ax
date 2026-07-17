@@ -29,7 +29,8 @@ if you file a release note.
 
 ## Resources / media (best-effort)
 
-- [ ] Pack to USB or external volume; progress/ETA updates during transfer
+- [ ] Pack to USB or external volume; progress dashboard updates (total / cmp* / trn, elapsed/ETA)
+- [ ] Optional: `stty cols 80` and `stty cols 120` — no row wrap garble; wide shows `archive | source`
 - [ ] Insufficient free space → hard fail unless `--force-resources` (if tested)
 - [ ] `--work-dir` on fast disk + output on slow volume; stage cleaned by default
 

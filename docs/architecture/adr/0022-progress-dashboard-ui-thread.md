@@ -20,26 +20,31 @@ Not applicable (stdlib + ANSI only; no TUI crate).
 1. **Dashboard layout** (fixed height = `jobs + 2`):
 
    ```text
-   total     …
-   compress0 …
-   compressN …
-   transfer  …
+   total  …
+   cmp0   …
+   cmpN   …
+   trn    …
    ```
 
+   Short tags (`cmp*` / `trn`) are normative for paint rows (ADR 0024).
+   Geometry, fixed-width numerics, file labels, and wide dual labels are
+   specified in **ADR 0024**.
+
 2. **Separation of concerns**:
-   - Pack workers: `report` / `report_worker` only update shared state.
-   - UI thread (`ax-progress`): ~200 ms tick → pure render → ANSI paint.
+   - Pack workers: `report` / `report_worker` only update shared state
+     (`primary` path + optional `source` path for compress members).
+   - UI thread (`ax-progress`): ~150–200 ms tick → pure render → ANSI paint.
 3. **Paint contract**: fixed row count; rewrite in place (cursor up + clear line).
    Cursor ends **below** the block between frames.
-4. **Display width**: see **ADR 0024** (Linux console **80-column** baseline;
-   display-width truncation; paths truncated; rows must not wrap).
+4. **Display width / labels**: see **ADR 0024** (80-col baseline, optional wide
+   mode, name·tag labels, no whole-row middle-truncate of metrics).
 5. **Module split** (delivery only): `rate`, `width`, `render`, `tty`, `mod`.
 6. **Disabled** when no TTY (`/dev/tty` or stderr not a terminal): no dashboard.
 7. **Verbose text logs** (`-v` / `-vv`) are separate from dashboard layout
-   (ADR 0023).
+   (ADR 0023). Dashboard always shows worker rows when enabled (not gated on `-v`).
 
-> **Note:** Early drafts of this ADR mentioned ~72 columns. **Superseded by
-> ADR 0024** (`ROW_COLS` / `MIN_CONSOLE_COLS` = **80**).
+> **Note:** Early drafts of this ADR mentioned ~72 columns and long labels
+> (`compress0` / `transfer`). **Superseded by ADR 0024** for geometry and tags.
 
 ## Consequences
 

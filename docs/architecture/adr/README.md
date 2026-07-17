@@ -16,9 +16,9 @@ Product/runtime decisions for **archiver** start at **0013**.
 | [0019](0019-supported-platforms-and-verification-scope.md) | Support & verification scope | **Accepted** | macOS/Linux supported; Windows/concurrent unsupported |
 | [0020](0020-primary-binary-ax-and-short-cli.md) | Primary binary `ax` + short CLI | **Accepted** | default-run ax; shorts pa/es/…; globals -c/-s/-o |
 | [0021](0021-environment-size-presets.md) | Size presets | **Accepted** | c2 / fat32 / flash / max (+ numeric) |
-| [0022](0022-progress-dashboard-ui-thread.md) | Progress dashboard + UI thread | **Accepted** | fixed height; workers paint-free; CJK width |
+| [0022](0022-progress-dashboard-ui-thread.md) | Progress dashboard + UI thread | **Accepted** | fixed height; UI thread; workers paint-free |
 | [0023](0023-pack-log-verbosity-policy.md) | Pack log verbosity | **Accepted** | quiet default; detail at -vv; dashboard ≠ -v |
-| [0024](0024-cli-screen-geometry.md) | CLI screen geometry | **Accepted** | **80-col** Linux console baseline; row cap; CJK width |
+| [0024](0024-cli-screen-geometry.md) | CLI screen geometry | **Accepted** | 80-col baseline; wide 120–200; fixed nums; name·tag |
 
 ## How these interact
 
@@ -33,7 +33,7 @@ CLI surface / binary name    ──► ADR 0020
 Named budgets (-s presets)   ──► ADR 0021
 Live progress UI (threads)   ──► ADR 0022
 Text log volume              ──► ADR 0023
-CLI screen width / geometry  ──► ADR 0024  (80×24 Linux console baseline)
+CLI screen width / geometry  ──► ADR 0024  (80 baseline; wide ≤200; labels)
 Product promises             ──► ADR 0014 + 0019
 ```
 

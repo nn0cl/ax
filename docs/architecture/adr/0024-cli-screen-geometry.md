@@ -16,8 +16,8 @@ Operators often use plain Linux consoles and SSH sessions whose traditional
 default geometry is **80×24** (VT / Linux virtual console). Designing for a
 wider IDE terminal hides wrap bugs that appear on 80-column hosts.
 
-This ADR consolidates **CLI screen design rules** and fixes the **minimum
-design width** to the Linux console standard.
+This ADR consolidates **CLI screen design rules**, fixes the **minimum design
+width** to the Linux console standard, and defines optional **wide mode**.
 
 ## Dependency Adoption Evidence
 
@@ -37,28 +37,35 @@ Not applicable (presentation rules only; no new crate).
 
 Implementation: `src/delivery/progress/width.rs` (`effective_row_cols`).
 
-### 2. What must fit in 80 columns
+Terminal width is **best-effort**: `COLUMNS` env, then Unix `TIOCGWINSZ` on
+`/dev/tty`. If probing fails (pipe, CI, no TTY), fall back to **80**. Rust
+running does **not** guarantee a width is available.
 
-1. Every progress dashboard line (total / compress* / transfer) after truncation.
-2. Prefer **fixed fields first** (counts, %, speeds, elapsed/ETA, phase); **paths last**.
-3. Paths use **display-width** truncation (ASCII ≈ 1 col, CJK/fullwidth ≈ 2 cols),
-   with a dedicated path budget (`PATH_COLS`, implementation may tune ≤ 20–24 cols).
+### 2. What must fit (layout rules)
+
+1. Every progress dashboard line after truncation must not wrap at the effective
+   row width.
+2. Prefer **fixed fields first** (counts, %, speeds, elapsed/ETA, phase); **labels last**.
+3. Labels use **display-width** awareness (ASCII ≈ 1 col, CJK/fullwidth ≈ 2 cols).
 4. Do **not** middle-truncate whole rows in a way that corrupts speeds/ETA
-   (historical bug: `…fer`, `…psed`, `…TA` from `ETA`). Only the **path**
-   segment may use middle-ellipsis; if the metrics prefix itself overflows a
-   narrow terminal, hard-clip from the **left** (keep leading fields).
+   (historical bug: `…fer`, `…psed`, `…TA` from `ETA`). Only the **path label**
+   segment may ellipsize; if the metrics prefix itself overflows a narrow
+   terminal, hard-clip from the **left** (keep leading fields).
 5. **Numeric fields are right-aligned with fixed maximum display widths** so values
    do not shift left/right as magnitudes change during a run (counts, percents,
    compact rates, durations). Clock is a fixed-width
    `elapsed <dur>  ETA <dur>` block (durations right-aligned to 6 cols).
-6. Metrics prefix must be designed to **fit inside 80 columns**. The **`total`**
-   row has **no path** so full `elapsed` / `ETA` labels fit; paths appear only on
-   `cmp*` / `trn` (truncated within the path budget).
-7. **Short row tags** with a fixed label column and double-space gutters between
-   major fields: `total` / `cmp0`…`cmpN` / `trn` (not `compress*` / `transfer`).
-8. **Wide mode (≥ 120 cols)**: `cmp` rows may show **archive | source** while
-   packing (file **names** + stable path tags only). Baseline 80-col mode keeps
-   a single name. Directory paths are not required.
+6. Metrics prefix must fit inside **80 columns**. The **`total`** row has **no
+   path** so full `elapsed` / `ETA` labels fit; file labels appear only on
+   `cmp*` / `trn`.
+7. **Short row tags** with a fixed label column and double-space gutters:
+   `total` / `cmp0`…`cmpN` / `trn` (not long `compress*` / `transfer`).
+8. **File labels** are **basename + stable 4-hex path tag**
+   (`report.docx·a3f2`), derived from the full relative path (FNV-1a). Not pure
+   random (must be stable for logs). Same basename, different folders → different
+   tags. Underlying plan/sort order remains full `rel_path`.
+9. **Wide mode (≥ 120 cols, ≤ 200)**: `cmp` may show **`archive | source`**
+   (both name·tag) while packing. Baseline 80-col mode shows a single label.
 
 ### 3. Height (dashboard)
 
@@ -83,54 +90,62 @@ Unchanged from ADR 0022 in spirit:
 | Binary name, short commands | ADR 0020 |
 | Dashboard threads / paint isolation | ADR 0022 |
 | `-v` / `-vv` text volume | ADR 0023 |
-| **Column budget & 80-col baseline** | **This ADR (0024)** |
+| **Column budget & 80-col baseline + wide** | **This ADR (0024)** |
 
 ADR 0022 § display width “~72 cols” is **superseded** by this ADR’s **80-col**
-baseline for row caps.
+baseline for the default row cap.
 
-### 6. Narrower than 80
+### 6. Narrower / wider than 80
 
-- **Not supported** as a design target: terminals &lt; 80 columns may wrap;
-  behavior is best-effort only (ADR 0019 style).
-- Wider terminals: still cap rows at 80 so layout stays stable and tested.
+| TTY width | Behavior |
+|-----------|----------|
+| &lt; 80 | Best-effort only (may wrap); not a design target (ADR 0019 style). |
+| 80–119 | Cap rows at **80**. |
+| ≥ 120 | Use `min(detected, 200)` — dual labels allowed on `cmp`. |
+| Probe fails | **80**. |
 
 ## Consequences
 
 Positive:
 
-- One clear number for QA (“test at 80×24”).
+- Clear QA baseline (“test at 80×24”).
 - Aligns with Linux console defaults and many SSH clients.
-- Reduces wrap-induced UI corruption.
+- Reduces wrap-induced UI corruption and numeric jitter.
+- Wide terminals can see archive and source file names without directories.
 
 Negative:
 
-- Paths shown shorter than on wide IDE terminals.
+- Directory context is not on the dashboard (by design: name·tag only).
 - Very high `-j` on 24-row screens leaves little scrollback for sticky logs.
+- Width probe is environment-dependent.
 
 ## Enforcement
 
 Code review should reject:
 
-- Raising default `ROW_COLS` above 80 without revisiting this ADR.
+- Raising default `ROW_COLS` / baseline above 80 without revisiting this ADR.
 - Progress rows built without display-width awareness for non-ASCII.
-- Assuming IDE-width (e.g. 120+) for “readable” dashboard layout.
+- Assuming IDE-width alone for “readable” layout without an 80-col path.
+- Whole-row middle-truncate of metrics (speeds / `elapsed` / `ETA`).
+- Pure random IDs in file labels (breaks stability / comparability).
 
 ## Implementation map
 
 | Item | Location |
 |------|----------|
-| Constants | `progress/width.rs` (`MIN_CONSOLE_COLS`, `ROW_COLS`) |
-| `effective_row_cols` | `progress/width.rs` |
+| Constants | `progress/width.rs` (`MIN_CONSOLE_COLS`, `ROW_COLS`, `WIDE_*`, `MAX_ROW_COLS`) |
+| `effective_row_cols` / `is_wide_layout` | `progress/width.rs` |
+| File label + `path_tag` | `progress/width.rs` (`display_file_label`) |
 | TTY probe | `probe_terminal_columns` (`COLUMNS` + `TIOCGWINSZ`) |
-| Render layout | `progress/render.rs` `Layout` |
-| Fixed-width numerics | `progress/render.rs` (`W_COUNT`/`W_BYTES`/`W_PCT`/`W_DURATION`, `fmt_*`) |
+| Render layout | `progress/render.rs` `Layout`, `fmt_*`, `DUAL_SEP` (` \| `) |
+| Worker source path | `WorkerView.source`; `report_worker(primary, source, …)` |
+| Per-member compress progress | `create_members_with_progress` + pack `unit_work` |
 | UI wiring | `progress/mod.rs` (probe once at start) |
 
 ## Verification notes
 
-- Unit tests: row `display_width ≤ ROW_COLS` for sample dashboards (incl. CJK);
-  `effective_row_cols(Some(120)) == 80`.
-- Unit tests: fixed-width right-aligned numerics (`fmt_count` / `fmt_bytes` /
-  `fmt_pct` / duration / time block) and stable column positions when magnitudes
-  change (`counts_do_not_shift_total_line`, `bytes_do_not_shift_transfer_line`).
-- Manual: `stty cols 80` (or 80×24 console) while running `ax pa …`.
+- Unit tests: row `display_width ≤` effective width; CJK; fixed-width numerics;
+  stable columns when magnitudes change; basename tags differ for same names;
+  wide dual `archive | source`; `effective_row_cols(Some(120)) == 120`,
+  `Some(250) == 200`, `Some(100) == 80`.
+- Manual: `stty cols 80` and `stty cols 120` while running `ax pa …`.

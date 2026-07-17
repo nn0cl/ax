@@ -235,7 +235,8 @@ impl PackProgress for SingleLineProgress {
         &self,
         worker_id: usize,
         phase: &'static str,
-        current: &str,
+        primary: &str,
+        source: &str,
         logical_delta: u64,
     ) {
         let Some(shared) = self.shared.as_ref() else {
@@ -243,7 +244,7 @@ impl PackProgress for SingleLineProgress {
         };
         if let Ok(mut st) = shared.state.lock() {
             if let Some(w) = st.workers.get_mut(worker_id) {
-                w.tick(phase, current, logical_delta);
+                w.tick(phase, primary, source, logical_delta);
             }
         }
     }

@@ -38,14 +38,23 @@ pub fn create_tar_members(
     members: &[MemberSpec],
     compression: TarCompression,
 ) -> Result<(), ArchiveError> {
+    create_tar_members_with_progress(output, members, compression, &|_, _| {})
+}
+
+pub fn create_tar_members_with_progress(
+    output: &Path,
+    members: &[MemberSpec],
+    compression: TarCompression,
+    on_member: &dyn Fn(usize, &MemberSpec),
+) -> Result<(), ArchiveError> {
     ensure_parent_dir(output)?;
     let file = File::create(output)?;
 
     match compression {
-        TarCompression::None => write_tar(file, members)?,
+        TarCompression::None => write_tar(file, members, on_member)?,
         TarCompression::Gzip => {
             let enc = GzEncoder::new(file, Compression::default());
-            write_tar(enc, members)?;
+            write_tar(enc, members, on_member)?;
         }
         TarCompression::Zstd => {
             // 0 threads ⇒ zstd uses as many threads as CPU cores (multi-threaded).
@@ -53,7 +62,7 @@ pub fn create_tar_members(
                 .map_err(|e| ArchiveError::Engine(e.to_string()))?;
             enc.multithread(0)
                 .map_err(|e| ArchiveError::Engine(e.to_string()))?;
-            write_tar(&mut enc, members)?;
+            write_tar(&mut enc, members, on_member)?;
             enc.finish()
                 .map_err(|e| ArchiveError::Engine(e.to_string()))?;
         }
@@ -61,10 +70,15 @@ pub fn create_tar_members(
     Ok(())
 }
 
-fn write_tar<W: Write>(writer: W, members: &[MemberSpec]) -> Result<(), ArchiveError> {
+fn write_tar<W: Write>(
+    writer: W,
+    members: &[MemberSpec],
+    on_member: &dyn Fn(usize, &MemberSpec),
+) -> Result<(), ArchiveError> {
     let mut builder = Builder::new(writer);
-    for member in members {
+    for (i, member) in members.iter().enumerate() {
         interrupt::check()?;
+        on_member(i, member);
         builder
             .append_path_with_name(&member.source, &member.member_name)
             .map_err(|e| ArchiveError::Engine(e.to_string()))?;

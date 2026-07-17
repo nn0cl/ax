@@ -111,7 +111,10 @@ impl RateSample {
 #[derive(Debug, Clone)]
 pub struct WorkerView {
     pub phase: &'static str,
+    /// Primary path for narrow (80-col) display: source while hashing, archive while packing.
     pub current: String,
+    /// Source file currently / last being processed (kept during compress for wide UI).
+    pub source: String,
     pub bps: u64,
     pub active: bool,
     logical: u64,
@@ -125,6 +128,7 @@ impl Default for WorkerView {
         Self {
             phase: "idle",
             current: String::new(),
+            source: String::new(),
             bps: 0,
             active: false,
             logical: 0,
@@ -135,11 +139,30 @@ impl Default for WorkerView {
 }
 
 impl WorkerView {
-    pub fn tick(&mut self, phase: &'static str, current: &str, logical_delta: u64) {
+    /// `primary` is archive or sole path; `source` is the input file when known (may be empty).
+    pub fn tick(
+        &mut self,
+        phase: &'static str,
+        primary: &str,
+        source: &str,
+        logical_delta: u64,
+    ) {
         let now = Instant::now();
         self.phase = phase;
-        self.current = current.to_string();
         self.active = phase != "idle";
+        if phase == "idle" {
+            self.current.clear();
+            self.source.clear();
+        } else {
+            self.current = primary.to_string();
+            if !source.is_empty() {
+                self.source = source.to_string();
+            } else if phase == "hash" {
+                // Hash reports the source as primary.
+                self.source = primary.to_string();
+            }
+            // compress/verify: keep previous `source` when caller omits it.
+        }
         self.logical = self.logical.saturating_add(logical_delta);
 
         let dt = now.duration_since(self.rate_at).as_secs_f64();

@@ -127,7 +127,15 @@ where
         ratio_prior,
     };
 
-    progress.report_worker(wid, "hash", &p.archive_relpath, 0);
+    // Worker path column: show the **work item** (source while hashing; archive
+    // while packing). Prefer rel_path so the dashboard can keep the file name.
+    let first_src = p
+        .unit
+        .files
+        .first()
+        .map(|f| f.rel_path.as_str())
+        .unwrap_or(p.archive_relpath.as_str());
+    progress.report_worker(wid, "hash", first_src, first_src, 0);
     progress.report(&snap("hash"));
 
     let mut mapped_members = Vec::with_capacity(p.unit.files.len());
@@ -142,7 +150,8 @@ where
             sha256: digest,
         });
         logical_done.fetch_add(file.size, Ordering::Relaxed);
-        progress.report_worker(wid, "hash", &p.archive_relpath, file.size);
+        // Compression *input* file currently being hashed.
+        progress.report_worker(wid, "hash", &file.rel_path, &file.rel_path, file.size);
         progress.report(&snap("hash"));
     }
     interrupt::check()?;
@@ -156,12 +165,22 @@ where
         fs.create_dir_all(parent)?;
     }
 
-    progress.report_worker(wid, "compress", &p.archive_relpath, 0);
+    // Compression *output* unit; per-member callback updates source for wide UI.
+    progress.report_worker(wid, "compress", &p.archive_relpath, first_src, 0);
     progress.report(&snap("compress"));
-    engine.create_members(format, &staged_path, &p.members)?;
+    engine.create_members_with_progress(format, &staged_path, &p.members, &|i, _m| {
+        let src = p
+            .unit
+            .files
+            .get(i)
+            .map(|f| f.rel_path.as_str())
+            .unwrap_or("");
+        let sz = p.unit.files.get(i).map(|f| f.size).unwrap_or(0);
+        progress.report_worker(wid, "compress", &p.archive_relpath, src, sz);
+    })?;
 
     let stage_sha256 = if verify_stage {
-        progress.report_worker(wid, "verify-stage", &p.archive_relpath, 0);
+        progress.report_worker(wid, "verify-stage", &p.archive_relpath, "", 0);
         progress.report(&snap("verify-stage"));
         verify_members_in_archive(
             engine,
@@ -173,10 +192,10 @@ where
         )?;
         interrupt::check()?;
         let sha = hasher.hash_file(&staged_path)?;
-        progress.report_worker(wid, "idle", "", 0);
+        progress.report_worker(wid, "idle", "", "", 0);
         Some(sha)
     } else {
-        progress.report_worker(wid, "idle", "", 0);
+        progress.report_worker(wid, "idle", "", "", 0);
         None
     };
 

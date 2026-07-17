@@ -22,6 +22,17 @@ pub trait ArchiveEngine: Sync {
         format: ArchiveFormat,
         output: &Path,
         members: &[MemberSpec],
+    ) -> Result<(), ArchiveError> {
+        self.create_members_with_progress(format, output, members, &|_, _| {})
+    }
+
+    /// Like [`create_members`], calling `on_member(index, spec)` before each member is packed.
+    fn create_members_with_progress(
+        &self,
+        format: ArchiveFormat,
+        output: &Path,
+        members: &[MemberSpec],
+        on_member: &dyn Fn(usize, &MemberSpec),
     ) -> Result<(), ArchiveError>;
 
     fn list(

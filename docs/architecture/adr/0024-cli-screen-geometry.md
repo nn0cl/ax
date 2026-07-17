@@ -31,9 +31,11 @@ Not applicable (presentation rules only; no new crate).
 |--------|------:|---------|
 | **`MIN_CONSOLE_COLS`** | **80** | Minimum horizontal width the CLI UI is **designed and tested** for. Matches classic **Linux console / VT** text width (80 columns). |
 | **`MIN_CONSOLE_ROWS`** | **24** | Soft reference for “small screen”; dashboard must still fit when `jobs` is moderate (see height). |
-| **`ROW_COLS`** | **80** | Hard cap for **each** painted dashboard row (display columns, not `char` count). |
+| **`ROW_COLS`** | **80** | Default hard cap for each painted row when TTY &lt; 120. |
+| **`WIDE_CONSOLE_COLS`** | **120** | At this width and above, unlock wider rows (up to `MAX_ROW_COLS`). |
+| **`MAX_ROW_COLS`** | **200** | Cap for wide mode. |
 
-Implementation constant: `src/delivery/progress/width.rs` → `ROW_COLS` (= 80).
+Implementation: `src/delivery/progress/width.rs` (`effective_row_cols`).
 
 ### 2. What must fit in 80 columns
 
@@ -42,7 +44,21 @@ Implementation constant: `src/delivery/progress/width.rs` → `ROW_COLS` (= 80).
 3. Paths use **display-width** truncation (ASCII ≈ 1 col, CJK/fullwidth ≈ 2 cols),
    with a dedicated path budget (`PATH_COLS`, implementation may tune ≤ 20–24 cols).
 4. Do **not** middle-truncate whole rows in a way that corrupts speeds/ETA
-   (historical bug: `…fer`, `…psed`).
+   (historical bug: `…fer`, `…psed`, `…TA` from `ETA`). Only the **path**
+   segment may use middle-ellipsis; if the metrics prefix itself overflows a
+   narrow terminal, hard-clip from the **left** (keep leading fields).
+5. **Numeric fields are right-aligned with fixed maximum display widths** so values
+   do not shift left/right as magnitudes change during a run (counts, percents,
+   compact rates, durations). Clock is a fixed-width
+   `elapsed <dur>  ETA <dur>` block (durations right-aligned to 6 cols).
+6. Metrics prefix must be designed to **fit inside 80 columns**. The **`total`**
+   row has **no path** so full `elapsed` / `ETA` labels fit; paths appear only on
+   `cmp*` / `trn` (truncated within the path budget).
+7. **Short row tags** with a fixed label column and double-space gutters between
+   major fields: `total` / `cmp0`…`cmpN` / `trn` (not `compress*` / `transfer`).
+8. **Wide mode (≥ 120 cols)**: `cmp` rows may show **archive | source** while
+   packing (file **names** + stable path tags only). Baseline 80-col mode keeps
+   a single name. Directory paths are not required.
 
 ### 3. Height (dashboard)
 
@@ -107,10 +123,14 @@ Code review should reject:
 | `effective_row_cols` | `progress/width.rs` |
 | TTY probe | `probe_terminal_columns` (`COLUMNS` + `TIOCGWINSZ`) |
 | Render layout | `progress/render.rs` `Layout` |
+| Fixed-width numerics | `progress/render.rs` (`W_COUNT`/`W_BYTES`/`W_PCT`/`W_DURATION`, `fmt_*`) |
 | UI wiring | `progress/mod.rs` (probe once at start) |
 
 ## Verification notes
 
 - Unit tests: row `display_width ≤ ROW_COLS` for sample dashboards (incl. CJK);
   `effective_row_cols(Some(120)) == 80`.
+- Unit tests: fixed-width right-aligned numerics (`fmt_count` / `fmt_bytes` /
+  `fmt_pct` / duration / time block) and stable column positions when magnitudes
+  change (`counts_do_not_shift_total_line`, `bytes_do_not_shift_transfer_line`).
 - Manual: `stty cols 80` (or 80×24 console) while running `ax pa …`.

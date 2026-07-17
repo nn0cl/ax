@@ -13,7 +13,7 @@
 - Reclassification reason: originally landed on main without issue; now tracked
 - Owner/agent: grok-build
 - Related branch: landed as `9cb31da` on `main`; follow-ups via LISS-0011 branch/PR
-- Related: ADR 0017 (config), size presets in domain
+- Related: ADR 0017 (config), **ADR 0020** (normative), ADR 0021 (presets), LISS-0013
 
 ## Summary
 

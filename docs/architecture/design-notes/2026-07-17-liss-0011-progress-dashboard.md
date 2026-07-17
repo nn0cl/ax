@@ -44,6 +44,11 @@ cargo build --release
 - Broken TTYs / pipes: UI disabled (sink); sticky messages on stderr.
 - Terminal width &lt; 72: path truncated more aggressively.
 
+## Normative ADRs
+
+- ADR 0022 — dashboard + UI thread  
+- ADR 0023 — text log verbosity (dashboard independent of `-v`)
+
 ## Next
 
 - PR for LISS-0011; CI gate before merge to main.

@@ -14,6 +14,10 @@ Product/runtime decisions for **archiver** start at **0013**.
 | [0017](0017-config-file-and-cli-precedence.md) | Config file precedence | **Accepted** | `.inf`/`.ini` `[pack]`; **CLI > config > default** |
 | [0018](0018-content-algorithm-size-estimate.md) | Content × algorithm size estimate | **Accepted** | Extension classes × format efficiency for ETA only; not budget |
 | [0019](0019-supported-platforms-and-verification-scope.md) | Support & verification scope | **Accepted** | macOS/Linux supported; Windows/concurrent unsupported |
+| [0020](0020-primary-binary-ax-and-short-cli.md) | Primary binary `ax` + short CLI | **Accepted** | default-run ax; shorts pa/es/…; globals -c/-s/-o |
+| [0021](0021-environment-size-presets.md) | Size presets | **Accepted** | c2 / fat32 / flash / max (+ numeric) |
+| [0022](0022-progress-dashboard-ui-thread.md) | Progress dashboard + UI thread | **Accepted** | fixed height; workers paint-free; CJK width |
+| [0023](0023-pack-log-verbosity-policy.md) | Pack log verbosity | **Accepted** | quiet default; detail at -vv; dashboard ≠ -v |
 
 ## How these interact
 
@@ -23,9 +27,17 @@ Size estimate / write ETA    ──► ADR 0018  (content × algo prior → then
 Free-space hard gate         ──► logical × safety (not 0018 prior)
 Resume / mapping integrity   ──► ADR 0015
 Extra pack integrity         ──► ADR 0016 (optional)
-Defaults & jobs              ──► ADR 0017
+Config defaults              ──► ADR 0017
+CLI surface / binary name    ──► ADR 0020
+Named budgets (-s presets)   ──► ADR 0021
+Live progress UI             ──► ADR 0022
+Text log volume              ──► ADR 0023
 Product promises             ──► ADR 0014 + 0019
 ```
+
+## Design book
+
+Consolidated entry: [`../ax-product-design-book.md`](../ax-product-design-book.md)
 
 ## Template ADRs (process)
 

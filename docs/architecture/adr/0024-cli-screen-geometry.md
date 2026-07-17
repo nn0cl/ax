@@ -99,7 +99,18 @@ Code review should reject:
 - Progress rows built without display-width awareness for non-ASCII.
 - Assuming IDE-width (e.g. 120+) for “readable” dashboard layout.
 
+## Implementation map
+
+| Item | Location |
+|------|----------|
+| Constants | `progress/width.rs` (`MIN_CONSOLE_COLS`, `ROW_COLS`) |
+| `effective_row_cols` | `progress/width.rs` |
+| TTY probe | `probe_terminal_columns` (`COLUMNS` + `TIOCGWINSZ`) |
+| Render layout | `progress/render.rs` `Layout` |
+| UI wiring | `progress/mod.rs` (probe once at start) |
+
 ## Verification notes
 
-- Unit tests: row `display_width ≤ ROW_COLS` for sample dashboards (incl. CJK).
+- Unit tests: row `display_width ≤ ROW_COLS` for sample dashboards (incl. CJK);
+  `effective_row_cols(Some(120)) == 80`.
 - Manual: `stty cols 80` (or 80×24 console) while running `ax pa …`.

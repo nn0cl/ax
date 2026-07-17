@@ -29,7 +29,7 @@ mod width;
 
 use crate::core::ports::{PackProgress, ProgressSnapshot};
 use rate::{RateSample, WorkerView};
-use render::render_dashboard;
+use render::{render_dashboard, Layout};
 use std::fs::OpenOptions;
 use std::io::{self, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -37,6 +37,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tty::{show_cursor, TtyBlock};
+use width::probe_terminal_columns;
 
 /// Shared state between pack workers and the UI thread.
 struct ProgressState {
@@ -46,10 +47,12 @@ struct ProgressState {
     workers: Vec<WorkerView>,
     snap: Option<ProgressSnapshot>,
     jobs: usize,
+    /// ADR 0024: effective paint width (≤ 80).
+    layout: Layout,
 }
 
 impl ProgressState {
-    fn new(jobs: usize) -> Self {
+    fn new(jobs: usize, layout: Layout) -> Self {
         let now = Instant::now();
         Self {
             start: now,
@@ -58,6 +61,7 @@ impl ProgressState {
             workers: vec![WorkerView::default(); jobs.max(1)],
             snap: None,
             jobs: jobs.max(1),
+            layout,
         }
     }
 
@@ -69,7 +73,8 @@ impl ProgressState {
             self.rate
                 .observe(now, &mut self.work_started, &snap);
         let elapsed = self.start.elapsed().as_secs_f64().max(0.0);
-        let mut lines = render_dashboard(&snap, elapsed, in_bps, out_bps, &self.workers);
+        let mut lines =
+            render_dashboard(&snap, elapsed, in_bps, out_bps, &self.workers, self.layout);
         let expect = self.jobs + 2;
         lines.resize(expect, String::new());
         Some(lines)
@@ -106,8 +111,10 @@ impl SingleLineProgress {
             };
         };
 
+        // ADR 0024: design at 80 cols; probe TTY and cap at 80.
+        let layout = Layout::from_terminal_cols(probe_terminal_columns());
         let shared = Arc::new(Shared {
-            state: Mutex::new(ProgressState::new(jobs)),
+            state: Mutex::new(ProgressState::new(jobs, layout)),
             out: Mutex::new(out),
             block: TtyBlock::new(Duration::from_millis(150)),
             stop: AtomicBool::new(false),

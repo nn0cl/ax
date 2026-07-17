@@ -1,6 +1,6 @@
 //! Pack command inputs and outcomes.
 
-use crate::core::domain::{ArchiveError, ArchiveFormat, PackPlan};
+use crate::core::domain::{ArchiveError, ArchiveFormat, ConnectionKind, PackPlan};
 use std::path::{Path, PathBuf};
 
 /// Input for a media-fit pack operation.
@@ -14,7 +14,17 @@ pub struct PackRequest {
     pub dry_run: bool,
     /// 0 quiet, 1 (`-v`) light, 2+ (`-vv`) detail (workers / per-unit logs).
     pub verbose: u8,
+    /// Compress workers. With `auto_jobs`, this is a provisional upper bound until plan.
     pub jobs: usize,
+    /// When true and jobs were not fixed by `-j`, retune after plan (CPU × units/files).
+    pub auto_jobs: bool,
+    /// When true, `jobs` came from `-j` / config and must not be replaced by auto formula
+    /// (still clamped to at least 1).
+    pub jobs_explicit: bool,
+    /// Destination connection class for I/O-aware auto-jobs (`--connection`).
+    pub connection: Option<ConnectionKind>,
+    /// Optional write throughput (bytes/s) for auto-jobs (CLI `--throughput` or measure).
+    pub throughput_bps: Option<u64>,
     /// Base directory for a private random stage subdir (other files left alone).
     pub work_dir: Option<PathBuf>,
     /// Keep the random stage after pack. Default: always delete.
@@ -47,6 +57,10 @@ impl Default for PackRequest {
             dry_run: false,
             verbose: 0,
             jobs: 1,
+            auto_jobs: false,
+            jobs_explicit: false,
+            connection: None,
+            throughput_bps: None,
             work_dir: None,
             keep_stage: false,
             resume: false,

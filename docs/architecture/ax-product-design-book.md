@@ -38,6 +38,7 @@ docs/architecture/design-notes/       ← compact notes per change unit
 | **0022** | **Progress dashboard + UI thread** (`total` / `cmp*` / `trn`) |
 | **0023** | **Log verbosity `-v`/`-vv`** |
 | **0024** | **CLI screen geometry** (80 baseline; wide 120–200; name·tag; fixed nums) |
+| **0025** | **Auto compress jobs (`--at`)** (CPU × units × I/O; no mid-run resize) |
 
 ## Issue index (recent product)
 
@@ -49,6 +50,7 @@ docs/architecture/design-notes/       ← compact notes per change unit
 | **0012** | ax CLI (retro) |
 | **0013** | Size presets |
 | **0014** | Log verbosity |
+| **0015** | Auto compress jobs (`--at`, I/O-aware) |
 
 ## Design notes (compact)
 
@@ -56,6 +58,7 @@ docs/architecture/design-notes/       ← compact notes per change unit
 |------|--------|
 | `2026-07-17-liss-0011-progress-dashboard.md` | Dashboard modules + labels + wide mode |
 | `2026-07-17-adr-0024-cli-screen-impl.md` | ADR 0024 implementation checklist |
+| `2026-07-17-auto-compress-jobs.md` | `--at` formula + non-goals |
 | `2026-07-17-ax-cli-and-presets.md` | Binary, shorts, presets |
 | `2026-07-17-pack-logging-and-verbosity.md` | Quiet default / `-vv` |
 
@@ -66,6 +69,7 @@ ax pa -i SRC -o OUT -s PRESET|SIZE -f zip|tar.zst -j N [--work-dir DIR]
         │
         ├─ scan / plan (logical budget)
         ├─ resource gate (logical × safety)
+        ├─ auto_jobs? (ADR 0025: after plan, fixed N)
         ├─ dashboard (TTY): total + cmp* + trn  (ADR 0022/0024)
         └─ mapping + plan files under OUT
 ```

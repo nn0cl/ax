@@ -19,6 +19,7 @@ if you file a release note.
 - [ ] `verify` OK after pack; `verify --quick` OK
 - [ ] `pack --config examples/archiver.inf` (with paths filled) or custom `.inf`
 - [ ] CLI overrides config (e.g. `--jobs` / `--verify-stage`)
+- [ ] Optional: `--at --connection usb3` logs `auto_jobs: … io_cap=… → jobs=N`; `-j 2 --at` keeps jobs=2
 
 ## Integrity
 

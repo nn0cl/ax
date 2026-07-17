@@ -342,7 +342,8 @@ ax pa --help
 | `--dry-run` | 計画のみ（アーカイブ・マッピングを書かない） |
 | `-v` / `-vv` | テキストログの詳細度（ADR 0023）。**ダッシュボードは `-v` と独立**（TTY なら常に worker 行を表示） |
 | `--progress` | 固定行数の進捗ダッシュボードを TTY 上で上書き表示（既定: TTY なら true） |
-| `--jobs N` | 並列圧縮ワーカー数（**既定: CPU 数、最大 8**） |
+| `-j, --jobs N` | 並列圧縮ワーカー数（**既定: CPU 数、最大 8**）。指定時は `--at` より優先 |
+| `--at` / `--auto-jobs` | plan 後に jobs を自動決定: **CPU × 残 unit × ファイル数 × I/O 上限**（`--connection` / `--throughput` と `--work-dir` 有無を考慮。遅い媒体ではスレッドを抑える。既定 max 8 を外し全体上限 32）。`-j` があるときは無効 |
 | `--work-dir <dir>` | ステージ用の**親ディレクトリ**。直下に `archiver-<random>/` を新規作成（既存ファイルには触れない）。**既定では成否に関わらず削除** |
 | `--keep-stage` | デバッグ用にステージを残す（`--work-dir` 必須） |
 | `--resume` | `output/archiver-plan.json` を使い、完了済みユニットを fingerprint でスキップ |

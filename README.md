@@ -122,6 +122,8 @@ ax es -p /Volumes/USB --measure
 # Pack (short): -i source, -o out, -s budget
 # Live dashboard on a real TTY: total / cmp0..N / trn (ADR 0022/0024)
 ax pa -i ./photos -o /Volumes/USB/backup --auto-size --connection usb3 -f tar.zst -j 4
+# Or auto-tune workers from CPU + plan size (alias --at):
+# ax pa -i ./photos -o /Volumes/USB/backup -s 4G -f zip --at --work-dir /tmp/aw
 
 # Plan only
 ax pa -i ./photos -o ./out --auto-size --dry-run

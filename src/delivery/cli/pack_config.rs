@@ -1,7 +1,9 @@
 //! Merge pack CLI flags with `[pack]` section from `.inf` / `.ini` config.
 
 use super::args::{default_jobs, CliConnection, CliFormat, CliMedia};
-use crate::core::domain::{load_ini_file, ArchiveError, IniConfig, DEFAULT_TARGET_SECS};
+use crate::core::domain::{
+    auto_jobs_provisional_cap, load_ini_file, ArchiveError, IniConfig, DEFAULT_TARGET_SECS,
+};
 use clap::ValueEnum;
 use std::path::{Path, PathBuf};
 
@@ -25,6 +27,10 @@ pub struct ResolvedPackSettings {
     pub verbose: u8,
     pub progress: bool,
     pub jobs: usize,
+    /// `--at` / `--auto-jobs` (or config); retune after plan when jobs not explicit.
+    pub auto_jobs: bool,
+    /// True when `-j` or config `jobs=` fixed the count.
+    pub jobs_explicit: bool,
     pub work_dir: Option<PathBuf>,
     pub keep_stage: bool,
     pub resume: bool,
@@ -55,6 +61,7 @@ pub struct PackCliArgs {
     pub verbose: u8,
     pub progress: Option<bool>,
     pub jobs: Option<usize>,
+    pub auto_jobs: bool,
     pub work_dir: Option<PathBuf>,
     pub keep_stage: bool,
     pub resume: bool,
@@ -155,11 +162,22 @@ pub fn resolve_pack_settings(
         .progress
         .or_else(|| pack.and_then(|c| c.get_bool("pack", "progress").ok().flatten()))
         .unwrap_or(true);
-    let jobs = cli
-        .jobs
-        .or_else(|| pack.and_then(|c| c.get_usize("pack", "jobs").ok().flatten()))
-        .unwrap_or_else(default_jobs)
-        .max(1);
+    let jobs_from_cli = cli.jobs;
+    let jobs_from_cfg = pack.and_then(|c| c.get_usize("pack", "jobs").ok().flatten());
+    let jobs_explicit = jobs_from_cli.is_some() || jobs_from_cfg.is_some();
+    let auto_jobs = (cli.auto_jobs
+        || pack
+            .and_then(|c| c.get_bool("pack", "auto_jobs").ok().flatten())
+            .unwrap_or(false))
+        && !jobs_explicit;
+    let jobs = if let Some(j) = jobs_from_cli.or(jobs_from_cfg) {
+        j.max(1)
+    } else if auto_jobs {
+        // Upper bound until plan; pack retunes with units/files.
+        auto_jobs_provisional_cap()
+    } else {
+        default_jobs()
+    };
     let work_dir = or_path(cli.work_dir, pack, "work_dir");
     let keep_stage = cli.keep_stage
         || pack
@@ -213,6 +231,8 @@ pub fn resolve_pack_settings(
         verbose,
         progress,
         jobs,
+        auto_jobs,
+        jobs_explicit,
         work_dir,
         keep_stage,
         resume,
@@ -308,6 +328,7 @@ format = zip
             verbose: 0,
             progress: None,
             jobs: None,
+            auto_jobs: false,
             work_dir: None,
             keep_stage: false,
             resume: false,
@@ -343,6 +364,7 @@ format = zip
             verbose: 0,
             progress: None,
             jobs: Some(3),
+            auto_jobs: false,
             work_dir: None,
             keep_stage: false,
             resume: false,
@@ -391,6 +413,7 @@ verify_stage = true
             verbose: 0,
             progress: None,
             jobs: Some(8),
+            auto_jobs: true, // ignored when -j is set
             work_dir: None,
             keep_stage: false,
             resume: false,
@@ -402,8 +425,46 @@ verify_stage = true
         };
         let r = resolve_pack_settings(cli, Some(&conf)).unwrap();
         assert_eq!(r.jobs, 8);
+        assert!(r.jobs_explicit);
+        assert!(!r.auto_jobs); // -j wins over --at
         assert!(matches!(r.format, CliFormat::Zip));
         assert!(r.verify_stage); // config true, CLI false → enabled
         assert_eq!(r.source, PathBuf::from("/s"));
+    }
+
+    #[test]
+    fn auto_jobs_provisional_without_j() {
+        let cli = PackCliArgs {
+            source: Some(PathBuf::from("/s")),
+            output: Some(PathBuf::from("/o")),
+            target_size: Some("10M".into()),
+            media: None,
+            auto_size: false,
+            volumes: None,
+            connection: None,
+            target_secs: None,
+            throughput: None,
+            measure: false,
+            format: Some(CliFormat::Zip),
+            mapping: None,
+            dry_run: false,
+            verbose: 0,
+            progress: None,
+            jobs: None,
+            auto_jobs: true,
+            work_dir: None,
+            keep_stage: false,
+            resume: false,
+            check_resources: None,
+            force_resources: false,
+            resource_safety_factor: None,
+            compress_only: false,
+            verify_stage: false,
+        };
+        let r = resolve_pack_settings(cli, None).unwrap();
+        assert!(r.auto_jobs);
+        assert!(!r.jobs_explicit);
+        assert!(r.jobs >= 1);
+        assert_eq!(r.jobs, auto_jobs_provisional_cap());
     }
 }

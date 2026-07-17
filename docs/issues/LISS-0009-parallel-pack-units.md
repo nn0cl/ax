@@ -42,12 +42,14 @@ so that total pack time drops without changing restore semantics.
 
 - 単一 unit 内のファイル並列（フォーマット制約が大きい）。
 - クラスタ分散。
+- 実行中の jobs 動的上下（→ LISS-0015 / ADR 0025 は **plan 後 1 回**の auto のみ）。
 
 ## Dependencies
 
 - Parent: WP-0002
 - Depends on: LISS-0004（FS/ports が整理されていること）
 - Blocks: none
+- Follow-up: **LISS-0015** (`--at` I/O-aware auto jobs, ADR 0025)
 - Related: LISS-0008 (progress under concurrency)
 
 ## Adjudicator Decision Points

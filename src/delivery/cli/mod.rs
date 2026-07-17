@@ -168,6 +168,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             verbose,
             progress,
             jobs,
+            auto_jobs,
             work_dir,
             keep_stage,
             resume,
@@ -198,6 +199,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                     verbose,
                     progress,
                     jobs,
+                    auto_jobs,
                     work_dir,
                     keep_stage,
                     resume,
@@ -219,6 +221,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             let connection = settings.connection;
             let target_secs = settings.target_secs;
             let throughput = settings.throughput;
+            let mut throughput_bps = parse_throughput(throughput)?;
             let measure = settings.measure;
             let format = settings.format;
             let mapping = settings.mapping;
@@ -226,6 +229,8 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             let verbose = settings.verbose;
             let progress = settings.progress;
             let jobs = settings.jobs;
+            let auto_jobs = settings.auto_jobs;
+            let jobs_explicit = settings.jobs_explicit;
             let work_dir = settings.work_dir;
             let keep_stage = settings.keep_stage;
             let resume = settings.resume;
@@ -276,7 +281,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                 let req = EstimateUnitRequest {
                     path: output.clone(),
                     connection_hint: connection.map(ConnectionKind::from),
-                    throughput_override: parse_throughput(throughput)?,
+                    throughput_override: throughput_bps,
                     target_transfer_secs: target_secs,
                     measure,
                     measure_sample_bytes: 64 * 1024 * 1024,
@@ -287,6 +292,10 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                     out.estimate.recommended_unit_bytes,
                     crate::core::domain::human_bytes(out.estimate.recommended_unit_bytes)
                 ));
+                // Prefer estimate/measure throughput for I/O-aware auto-jobs.
+                if out.estimate.assumed_throughput_bytes_per_sec > 0 {
+                    throughput_bps = Some(out.estimate.assumed_throughput_bytes_per_sec);
+                }
                 out.estimate.recommended_unit_bytes
             } else {
                 if let Some(ref ts) = target_size {
@@ -314,6 +323,10 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                 dry_run,
                 verbose,
                 jobs,
+                auto_jobs,
+                jobs_explicit,
+                connection: connection.map(ConnectionKind::from),
+                throughput_bps,
                 work_dir,
                 keep_stage,
                 resume,

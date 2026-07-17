@@ -46,6 +46,11 @@ pub trait PackProgress: Send + Sync {
 
     /// Finish the display (e.g. emit newline after status block).
     fn finish(&self);
+
+    /// Resize compress worker rows (e.g. after auto-jobs retune). Default: no-op.
+    fn set_jobs(&self, jobs: usize) {
+        let _ = jobs;
+    }
 }
 
 /// No-op reporter.

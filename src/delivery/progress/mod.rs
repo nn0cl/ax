@@ -256,6 +256,22 @@ impl PackProgress for SingleLineProgress {
         };
         shared.block.finish(&shared.out);
     }
+
+    fn set_jobs(&self, jobs: usize) {
+        let Some(shared) = self.shared.as_ref() else {
+            return;
+        };
+        let n = jobs.max(1);
+        if let Ok(mut st) = shared.state.lock() {
+            if st.jobs == n {
+                return;
+            }
+            st.jobs = n;
+            st.workers.resize_with(n, WorkerView::default);
+            // Force next paint to use new height (TtyBlock tracks prev rows).
+            shared.block.reset_after_log();
+        }
+    }
 }
 
 impl Drop for SingleLineProgress {

@@ -53,8 +53,15 @@ Fast Path / readability refactor with compact design notes
 - This PR re-establishes branch + PR discipline for the progress work.
 - Further feature work should open LISS + feature branch before coding.
 
+## Follow-up on same branch (auto-jobs)
+
+- Code: `src/core/domain/jobs.rs`, `--at` / `--auto-jobs`, I/O-aware caps
+- Docs: **ADR 0025**, **LISS-0015**, design note `2026-07-17-auto-compress-jobs.md`
+- Decision: plan-time fixed N only; no mid-run thread up/down (idle yields CPU)
+
 ## Handoff
 
 - PR: https://github.com/nn0cl/ax/pull/4
 - Merge when CI green.
 - Operator: `target/release/ax pa …` on a real TTY; try `stty cols 80` and `120`.
+- Auto jobs: `ax pa … --at --connection usb3 --work-dir /tmp/…`

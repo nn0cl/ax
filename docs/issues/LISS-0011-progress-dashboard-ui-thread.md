@@ -14,6 +14,7 @@
 - Owner/agent: grok-build
 - Related branch: `feature/liss-0011-progress-dashboard`
 - ADR: **0022** (dashboard + UI thread), **0023** (log verbosity), **0024** (screen geometry)
+- Related: LISS-0015 / ADR 0025 (`set_jobs` when auto-jobs retunes after plan)
 - Supersedes/extends: LISS-0008 (progress), LISS-0009 (parallel workers)
 
 ## Summary

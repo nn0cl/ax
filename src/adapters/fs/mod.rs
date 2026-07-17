@@ -4,12 +4,15 @@ mod hash;
 mod local_fs;
 mod measure;
 mod probe;
+mod resources;
 mod scan;
+mod space;
 
 pub use hash::Sha256Hasher;
 pub use local_fs::LocalFileSystem;
 pub use measure::LocalThroughputMeter;
 pub use probe::LocalMediaProbe;
+pub use resources::LocalResourceProbe;
 pub use scan::LocalFileScanner;
 
 use crate::core::domain::ArchiveError;

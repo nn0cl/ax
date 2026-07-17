@@ -1,6 +1,10 @@
+mod progress;
+
+pub use progress::{NullProgress, PackProgress, ProgressSnapshot};
+
 use crate::core::domain::{
     ArchiveError, ArchiveFormat, ArchiveMember, ConnectionKind, MappingManifest, MemberSpec,
-    SourceFile,
+    PackPlanFile, SourceFile,
 };
 use std::path::{Path, PathBuf};
 
@@ -34,15 +38,35 @@ pub trait ArchiveEngine: Sync {
     ) -> Result<(), ArchiveError>;
 }
 
-/// Port for scanning a source tree for pack.
-pub trait FileScanner {
-    fn scan_tree(&self, root: &Path) -> Result<(Vec<SourceFile>, Vec<String>), ArchiveError>;
+/// Live counters while walking the source tree.
+#[derive(Debug, Clone)]
+pub struct ScanProgress {
+    pub files_found: usize,
+    pub bytes_found: u64,
+    pub dirs_seen: usize,
+    pub current: String,
 }
 
-/// Port for reading/writing the JSON mapping manifest.
-pub trait MappingStore {
+/// Port for scanning a source tree for pack.
+pub trait FileScanner {
+    fn scan_tree(&self, root: &Path) -> Result<(Vec<SourceFile>, Vec<String>), ArchiveError> {
+        self.scan_tree_with_progress(root, &|_| {})
+    }
+
+    /// Walk `root`, optionally reporting progress (throttling is caller's choice).
+    fn scan_tree_with_progress(
+        &self,
+        root: &Path,
+        on_progress: &dyn Fn(ScanProgress),
+    ) -> Result<(Vec<SourceFile>, Vec<String>), ArchiveError>;
+}
+
+/// Port for reading/writing the JSON mapping manifest and pack plan.
+pub trait MappingStore: Sync {
     fn write(&self, path: &Path, manifest: &MappingManifest) -> Result<(), ArchiveError>;
     fn read(&self, path: &Path) -> Result<MappingManifest, ArchiveError>;
+    fn write_plan(&self, path: &Path, plan: &PackPlanFile) -> Result<(), ArchiveError>;
+    fn read_plan(&self, path: &Path) -> Result<PackPlanFile, ArchiveError>;
 }
 
 /// Minimal filesystem operations used by application use cases.
@@ -50,6 +74,11 @@ pub trait FileSystem: Sync {
     fn is_dir(&self, path: &Path) -> bool;
     fn exists(&self, path: &Path) -> bool;
     fn create_dir_all(&self, path: &Path) -> Result<(), ArchiveError>;
+    fn file_len(&self, path: &Path) -> Result<u64, ArchiveError>;
+    fn copy_file(&self, from: &Path, to: &Path) -> Result<u64, ArchiveError>;
+    fn remove_file(&self, path: &Path) -> Result<(), ArchiveError>;
+    fn remove_dir_all(&self, path: &Path) -> Result<(), ArchiveError>;
+    fn rename(&self, from: &Path, to: &Path) -> Result<(), ArchiveError>;
 }
 
 /// Streaming content hash (SHA-256 hex lowercase).
@@ -75,6 +104,20 @@ pub trait MediaProbe {
         path: &Path,
         connection_hint: Option<ConnectionKind>,
     ) -> Result<ProbedMedia, ArchiveError>;
+}
+
+/// Free disk bytes and optional system memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VolumeSpace {
+    pub free_bytes: u64,
+    pub total_bytes: u64,
+}
+
+/// Port for local resource inspection (own machine + destination volumes).
+pub trait ResourceProbe: Sync {
+    fn disk_space(&self, path: &Path) -> Result<VolumeSpace, ArchiveError>;
+    /// Best-effort available memory (None if unknown).
+    fn available_memory_bytes(&self) -> Option<u64>;
 }
 
 /// Optional sequential write sample for throughput estimation.

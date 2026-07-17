@@ -57,4 +57,13 @@ pub enum ArchiveError {
 
     #[error("throughput measurement failed: {0}")]
     MeasureFailed(String),
+
+    #[error("interrupted (Ctrl+C); progress saved where possible — re-run with --resume")]
+    Interrupted,
+
+    #[error("insufficient resources: {0}")]
+    InsufficientResources(String),
+
+    #[error("verify failed: {0}")]
+    VerifyFailed(String),
 }

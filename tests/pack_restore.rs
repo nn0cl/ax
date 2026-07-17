@@ -62,10 +62,81 @@ fn pack_one_folder_one_archive_when_fits() {
 }
 
 #[test]
-fn pack_splits_by_extension_when_folder_too_large() {
+fn verify_succeeds_after_pack() {
     let dir = tempdir().unwrap();
     let source = dir.path().join("src");
-    // Each file 400 bytes; budget 1000 → folder total 1200 > budget → by ext
+    write_file(&source.join("docs/a.txt"), b"aaa");
+    write_file(&source.join("docs/b.txt"), b"bbb");
+
+    let output = dir.path().join("out");
+    archiver()
+        .args([
+            "pack",
+            "--source",
+            source.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--target-size",
+            "1M",
+            "--format",
+            "zip",
+        ])
+        .assert()
+        .success();
+
+    let map = output.join("archiver-map.json");
+    archiver()
+        .args(["verify", "--mapping", map.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("verify ok"));
+
+    archiver()
+        .args(["verify", "--mapping", map.to_str().unwrap(), "--quick"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("verify ok"));
+}
+
+#[test]
+fn verify_fails_when_archive_missing() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    write_file(&source.join("docs/a.txt"), b"aaa");
+
+    let output = dir.path().join("out");
+    archiver()
+        .args([
+            "pack",
+            "--source",
+            source.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--target-size",
+            "1M",
+            "--format",
+            "zip",
+        ])
+        .assert()
+        .success();
+
+    let map = output.join("archiver-map.json");
+    let zip = output.join("docs/part-0001.zip");
+    fs::remove_file(&zip).unwrap();
+
+    archiver()
+        .args(["verify", "--mapping", map.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("issue:"))
+        .stderr(predicate::str::contains("missing").or(predicate::str::contains("verify failed")));
+}
+
+#[test]
+fn pack_keeps_one_folder_together_when_over_budget() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    // Same folder, total 1200 > budget 1000 → still one archive (no 生き別れ)
     write_file(&source.join("photos/a.jpg"), &vec![1u8; 400]);
     write_file(&source.join("photos/b.jpg"), &vec![2u8; 400]);
     write_file(&source.join("photos/c.png"), &vec![3u8; 400]);
@@ -85,10 +156,39 @@ fn pack_splits_by_extension_when_folder_too_large() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("2 archive"));
+        .stdout(predicate::str::contains("1 archive"));
 
     assert!(output.join("photos/part-0001.zip").exists());
-    assert!(output.join("photos/part-0002.zip").exists());
+    assert!(!output.join("photos/part-0002.zip").exists());
+}
+
+#[test]
+fn pack_merges_multiple_folders_under_budget() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    write_file(&source.join("a/x.txt"), &vec![1u8; 300]);
+    write_file(&source.join("b/y.txt"), &vec![2u8; 300]);
+    write_file(&source.join("c/z.txt"), &vec![3u8; 300]);
+
+    let output = dir.path().join("out");
+    archiver()
+        .args([
+            "pack",
+            "--source",
+            source.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--target-size",
+            "1000",
+            "--format",
+            "zip",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 archive"));
+
+    // Common parent is root → part-0001.zip at output root
+    assert!(output.join("part-0001.zip").exists());
 }
 
 #[test]
@@ -431,6 +531,247 @@ fn estimate_shows_detection() {
         .success()
         .stdout(predicate::str::contains("detection:"))
         .stdout(predicate::str::contains("cli_hint"));
+}
+
+#[test]
+fn pack_resume_without_plan_starts_fresh() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    write_file(&source.join("a.txt"), b"x");
+    let output = dir.path().join("out");
+
+    archiver()
+        .args([
+            "pack",
+            "--source",
+            source.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--target-size",
+            "1M",
+            "--format",
+            "zip",
+            "--resume",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("starting fresh pack"));
+}
+
+#[test]
+fn pack_resume_skips_completed_unit() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    write_file(&source.join("a/x.txt"), b"aaa");
+    write_file(&source.join("b/y.txt"), b"bbb");
+    let output = dir.path().join("out");
+
+    archiver()
+        .args([
+            "pack",
+            "--source",
+            source.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--target-size",
+            "1M",
+            "--format",
+            "zip",
+        ])
+        .assert()
+        .success();
+
+    assert!(output.join("archiver-plan.json").exists());
+
+    // Resume without source change should skip all units (still succeed).
+    archiver()
+        .args([
+            "pack",
+            "--source",
+            source.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--target-size",
+            "1M",
+            "--format",
+            "zip",
+            "--resume",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("skipped_done="));
+
+    // Change one file → that unit must rebuild; resume still works.
+    write_file(&source.join("a/x.txt"), b"aaa-changed");
+    archiver()
+        .args([
+            "pack",
+            "--source",
+            source.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--target-size",
+            "1M",
+            "--format",
+            "zip",
+            "--resume",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("need_build="));
+}
+
+#[test]
+fn pack_volumes_layout() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    // three ~400-byte folders; budget 1000 → may merge; volumes capacity 1000
+    write_file(&source.join("a/x.txt"), &vec![1u8; 400]);
+    write_file(&source.join("b/y.txt"), &vec![2u8; 400]);
+    write_file(&source.join("c/z.txt"), &vec![3u8; 400]);
+
+    let output = dir.path().join("out");
+    archiver()
+        .args([
+            "pack",
+            "--source",
+            source.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--target-size",
+            "1000",
+            "--volumes",
+            "2",
+            "--format",
+            "zip",
+            "--compress-only",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("volumes="));
+
+    // At least one archive under vol-001
+    assert!(output.join("vol-001").exists() || output.join("vol-002").exists());
+
+    let map = output.join("archiver-map.json");
+    let text = fs::read_to_string(&map).unwrap();
+    assert!(text.contains("vol-00"), "mapping should reference vol- paths: {text}");
+
+    archiver()
+        .args(["verify", "--mapping", map.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let dest = dir.path().join("restored");
+    archiver()
+        .args([
+            "restore",
+            "--mapping",
+            map.to_str().unwrap(),
+            "--dest",
+            dest.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert_eq!(fs::read(dest.join("a/x.txt")).unwrap(), vec![1u8; 400]);
+}
+
+#[test]
+fn pack_volumes_only_derives_budget() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    write_file(&source.join("a/x.txt"), &vec![1u8; 300]);
+    write_file(&source.join("b/y.txt"), &vec![2u8; 300]);
+
+    let output = dir.path().join("out");
+    archiver()
+        .args([
+            "pack",
+            "--source",
+            source.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--volumes",
+            "2",
+            "--format",
+            "zip",
+            "--dry-run",
+        ])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("budget_from_volumes")
+                .or(predicate::str::contains("volumes=")),
+        );
+}
+
+#[test]
+fn pack_work_dir_then_cleanup() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    write_file(&source.join("a/x.txt"), b"hello-work-dir");
+    let output = dir.path().join("out");
+    let work = dir.path().join("work");
+
+    archiver()
+        .args([
+            "pack",
+            "--source",
+            source.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--target-size",
+            "1M",
+            "--format",
+            "zip",
+            "--work-dir",
+            work.to_str().unwrap(),
+            "--cleanup-work-dir",
+        ])
+        .assert()
+        .success();
+
+    assert!(output.join("archiver-map.json").exists());
+    // Final archive must exist on output
+    let has_archive = fs::read_dir(&output)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .any(|e| {
+            e.path()
+                .extension()
+                .map(|x| x == "zip")
+                .unwrap_or(false)
+                || e.file_type().map(|t| t.is_dir()).unwrap_or(false)
+        });
+    assert!(has_archive || output.join("part-0001.zip").exists() || output.join("a").exists());
+
+    // Stage tree under work/.archiver-work should be gone after cleanup
+    let stage_base = work.join(".archiver-work");
+    if stage_base.exists() {
+        let left: Vec<_> = fs::read_dir(&stage_base)
+            .map(|rd| rd.filter_map(|e| e.ok()).collect())
+            .unwrap_or_default();
+        assert!(
+            left.is_empty(),
+            "stage dirs should be removed: {left:?}"
+        );
+    }
+
+    let dest = dir.path().join("restored");
+    archiver()
+        .args([
+            "restore",
+            "--mapping",
+            output.join("archiver-map.json").to_str().unwrap(),
+            "--dest",
+            dest.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(dest.join("a/x.txt")).unwrap(),
+        "hello-work-dir"
+    );
 }
 
 #[test]

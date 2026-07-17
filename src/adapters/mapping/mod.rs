@@ -1,4 +1,4 @@
-use crate::core::domain::{ArchiveError, MappingManifest};
+use crate::core::domain::{ArchiveError, MappingManifest, PackPlanFile};
 use crate::core::ports::MappingStore;
 use std::fs;
 use std::path::Path;
@@ -12,20 +12,37 @@ impl JsonMappingStore {
     }
 }
 
+fn write_json_atomic(path: &Path, json: &str) -> Result<(), ArchiveError> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+    let tmp = path.with_extension("json.partial");
+    fs::write(&tmp, json)?;
+    fs::rename(&tmp, path)?;
+    Ok(())
+}
+
 impl MappingStore for JsonMappingStore {
     fn write(&self, path: &Path, manifest: &MappingManifest) -> Result<(), ArchiveError> {
         let json = serde_json::to_string_pretty(manifest)
             .map_err(|e| ArchiveError::Mapping(e.to_string()))?;
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)?;
-            }
-        }
-        fs::write(path, json)?;
-        Ok(())
+        write_json_atomic(path, &json)
     }
 
     fn read(&self, path: &Path) -> Result<MappingManifest, ArchiveError> {
+        let data = fs::read_to_string(path)?;
+        serde_json::from_str(&data).map_err(|e| ArchiveError::Mapping(e.to_string()))
+    }
+
+    fn write_plan(&self, path: &Path, plan: &PackPlanFile) -> Result<(), ArchiveError> {
+        let json =
+            serde_json::to_string_pretty(plan).map_err(|e| ArchiveError::Mapping(e.to_string()))?;
+        write_json_atomic(path, &json)
+    }
+
+    fn read_plan(&self, path: &Path) -> Result<PackPlanFile, ArchiveError> {
         let data = fs::read_to_string(path)?;
         serde_json::from_str(&data).map_err(|e| ArchiveError::Mapping(e.to_string()))
     }

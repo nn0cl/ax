@@ -1,17 +1,20 @@
 use crate::adapters::archive::CompositeArchiveEngine;
 use crate::adapters::fs::{
-    LocalFileScanner, LocalFileSystem, LocalMediaProbe, LocalThroughputMeter, Sha256Hasher,
+    LocalFileScanner, LocalFileSystem, LocalMediaProbe, LocalResourceProbe, LocalThroughputMeter,
+    Sha256Hasher,
 };
 use crate::adapters::mapping::JsonMappingStore;
 use crate::core::application::{
-    default_archives_root, default_mapping_path, CreateArchive, EstimateTransferUnit,
-    EstimateUnitRequest, ExtractArchive, ListArchive, PackRequest, PackSourceTree,
-    RestoreFromMapping, RestoreRequest,
+    default_archives_root, default_mapping_path, default_verify_archives_root, CreateArchive,
+    EstimateTransferUnit, EstimateUnitRequest, ExtractArchive, ListArchive, PackRequest,
+    PackSourceTree, RestoreFromMapping, RestoreRequest, VerifyMapping, VerifyRequest,
 };
 use crate::core::domain::{
     effective_budget, format_estimate_report_with_meta, parse_size, ArchiveError, ArchiveFormat,
     ConnectionKind, MediaKind, DEFAULT_TARGET_SECS,
 };
+use crate::core::ports::NullProgress;
+use crate::delivery::progress::SingleLineProgress;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -159,6 +162,11 @@ pub enum Commands {
         #[arg(long, conflicts_with_all = ["target_size", "media"])]
         auto_size: bool,
 
+        /// Split pack into up to N volume dirs (`vol-001/` …). Capacity = budget
+        /// (or ceil(total/N) if used alone without --target-size/--media/--auto-size)
+        #[arg(long)]
+        volumes: Option<u32>,
+
         #[arg(long, value_enum)]
         connection: Option<CliConnection>,
 
@@ -182,13 +190,45 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
 
-        /// Log per-archive progress to stderr
+        /// Verbose: show per-compress-thread speed lines in the progress UI
         #[arg(long, short = 'v')]
         verbose: bool,
+
+        /// Two-line live speed on stderr: compress + transfer (default: on when TTY)
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        progress: bool,
 
         /// Parallel archive workers (default: 1)
         #[arg(long, default_value_t = 1)]
         jobs: usize,
+
+        /// Local staging directory: compress here, then copy to --output (e.g. fast SSD)
+        #[arg(long)]
+        work_dir: Option<PathBuf>,
+
+        /// After each archive is copied to --output, delete staged files; remove stage tree at end
+        #[arg(long, requires = "work_dir")]
+        cleanup_work_dir: bool,
+
+        /// Resume from output/archiver-plan.json when present; if missing, start a fresh pack
+        #[arg(long)]
+        resume: bool,
+
+        /// Check free disk on output/work-dir and soft memory before writing (default: true)
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        check_resources: bool,
+
+        /// Continue even if resource check reports insufficient free space
+        #[arg(long)]
+        force_resources: bool,
+
+        /// Safety multiplier for disk estimates (default 1.0 = need up to remaining logical on output)
+        #[arg(long, default_value_t = 1.0)]
+        resource_safety_factor: f64,
+
+        /// Complete local pack under --output (prefer rename from work-dir; no USB assumption)
+        #[arg(long)]
+        compress_only: bool,
     },
 
     /// Restore a tree from a JSON mapping and scattered archives
@@ -206,6 +246,20 @@ pub enum Commands {
         #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
         verify: bool,
     },
+
+    /// Verify packed archives against a mapping (no restore to a user path)
+    Verify {
+        #[arg(short, long)]
+        mapping: PathBuf,
+
+        /// Root for archive_relpath (default: mapping file's directory)
+        #[arg(long)]
+        archives_root: Option<PathBuf>,
+
+        /// Presence + member list only (skip extract and SHA-256)
+        #[arg(long)]
+        quick: bool,
+    },
 }
 
 fn parse_format(raw: Option<String>) -> Result<Option<ArchiveFormat>, ArchiveError> {
@@ -222,17 +276,32 @@ fn parse_throughput(raw: Option<String>) -> Result<Option<u64>, ArchiveError> {
     }
 }
 
-fn resolve_budget_manual(
+/// Budget for pack: explicit flags, or 0 when only `--volumes` (filled after scan).
+fn resolve_pack_budget(
     target_size: Option<String>,
     media: Option<CliMedia>,
-    connection: ConnectionKind,
-) -> Result<u64, ArchiveError> {
-    match (target_size, media) {
-        (Some(s), None) => {
+    auto_size: bool,
+    volumes: Option<u32>,
+    connection: Option<CliConnection>,
+) -> Result<Option<u64>, ArchiveError> {
+    if auto_size {
+        return Ok(None); // caller handles
+    }
+    match (target_size, media, volumes) {
+        (Some(s), None, _) => {
+            let conn = connection
+                .map(ConnectionKind::from)
+                .unwrap_or(ConnectionKind::Local);
             let bytes = parse_size(&s)?;
-            Ok(effective_budget(MediaKind::Custom(bytes), connection))
+            Ok(Some(effective_budget(MediaKind::Custom(bytes), conn)))
         }
-        (None, Some(m)) => Ok(effective_budget(MediaKind::from(m), connection)),
+        (None, Some(m), _) => {
+            let conn = connection
+                .map(ConnectionKind::from)
+                .unwrap_or(ConnectionKind::Local);
+            Ok(Some(effective_budget(MediaKind::from(m), conn)))
+        }
+        (None, None, Some(_)) => Ok(Some(0)), // pack derives after scan
         _ => Err(ArchiveError::InvalidBudget),
     }
 }
@@ -248,6 +317,11 @@ pub fn run(cli: Cli) -> ExitCode {
                 }
             }
             ExitCode::SUCCESS
+        }
+        Err(ArchiveError::Interrupted) => {
+            eprintln!("error: {err}", err = ArchiveError::Interrupted);
+            // 128 + SIGINT(2) = 130, conventional for Ctrl+C.
+            ExitCode::from(130)
         }
         Err(err) => {
             eprintln!("error: {err}");
@@ -341,6 +415,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             target_size,
             media,
             auto_size,
+            volumes,
             connection,
             target_secs,
             throughput,
@@ -349,9 +424,34 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             mapping,
             dry_run,
             verbose,
+            progress,
             jobs,
+            work_dir,
+            cleanup_work_dir,
+            resume,
+            check_resources,
+            force_resources,
+            resource_safety_factor,
+            compress_only,
         } => {
+            let line_progress =
+                SingleLineProgress::new(progress && !dry_run, verbose, jobs.max(1));
+            let resources = LocalResourceProbe::new();
+            if progress && !dry_run && !line_progress.is_enabled() {
+                eprintln!(
+                    "warning: progress UI disabled (no controlling terminal); \
+                     try running without redirect, or check /dev/tty"
+                );
+            }
+
             let budget = if auto_size {
+                if measure {
+                    line_progress.status_message(
+                        "measuring write speed on destination (this can take ~1 min)...",
+                    );
+                } else {
+                    line_progress.status_message("estimating pack unit size...");
+                }
                 let req = EstimateUnitRequest {
                     path: output.clone(),
                     connection_hint: connection.map(ConnectionKind::from),
@@ -364,15 +464,44 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                 if measure && !out.measured {
                     eprintln!("warning: write measurement failed; using table/default throughput");
                 }
+                line_progress.status_message(&format!(
+                    "budget {} bytes ({})",
+                    out.estimate.recommended_unit_bytes,
+                    crate::core::domain::human_bytes(out.estimate.recommended_unit_bytes)
+                ));
                 out.estimate.recommended_unit_bytes
             } else {
-                let conn = connection
-                    .map(ConnectionKind::from)
-                    .unwrap_or(ConnectionKind::Local);
-                resolve_budget_manual(target_size, media, conn)?
+                resolve_pack_budget(target_size, media, auto_size, volumes, connection)?
+                    .unwrap_or(0)
             };
 
             let mapping_path = mapping.unwrap_or_else(|| default_mapping_path(&output));
+            line_progress.status_message(&format!(
+                "scanning source {} ...",
+                source.display()
+            ));
+
+            if compress_only {
+                line_progress.status_message(
+                    "mode=compress-only (final pack under --output)",
+                );
+            }
+            if let Some(n) = volumes {
+                line_progress.status_message(&format!("volumes={n} (vol-001/ …)"));
+            }
+            if let Some(ref wd) = work_dir {
+                let how = if compress_only {
+                    "compress local → finalize to output (prefer rename)"
+                } else {
+                    "compress local → copy to output"
+                };
+                line_progress.status_message(&format!(
+                    "work_dir={} ({how}) cleanup={}",
+                    wd.display(),
+                    cleanup_work_dir
+                ));
+            }
+
             let req = PackRequest {
                 source,
                 output: output.clone(),
@@ -382,17 +511,32 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                 dry_run,
                 verbose,
                 jobs,
+                work_dir,
+                cleanup_work_dir,
+                resume,
+                check_resources,
+                force_resources,
+                resource_safety_factor,
+                compress_only,
+                volumes,
             };
-            let result =
-                PackSourceTree::new(&engine, &scanner, &mapping_store, &fs, &hasher).execute(&req)?;
 
-            if verbose || dry_run {
+            let packer =
+                PackSourceTree::new(&engine, &scanner, &mapping_store, &fs, &hasher, &resources);
+            let result = if line_progress.is_enabled() {
+                packer.execute_with_progress(&req, &line_progress)?
+            } else {
+                packer.execute_with_progress(&req, &NullProgress)?
+            };
+
+            // Multi-line plan only for dry-run or explicit verbose (avoid log flood).
+            if dry_run {
                 for line in &result.messages {
-                    if dry_run {
-                        println!("{line}");
-                    } else {
-                        eprintln!("{line}");
-                    }
+                    println!("{line}");
+                }
+            } else if verbose {
+                for line in &result.messages {
+                    eprintln!("{line}");
                 }
             }
 
@@ -403,13 +547,29 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                     budget
                 ))
             } else {
-                Ok(format!(
+                let mut out = format!(
                     "packed {} archive(s), {} empty dir(s), budget {} bytes\nmapping: {}\n",
                     result.plan.units.len(),
                     result.plan.empty_directories.len(),
                     budget,
                     mapping_path.display()
-                ))
+                );
+                for line in &result.messages {
+                    if line.starts_with("resume:")
+                        || line.starts_with("plan_file=")
+                        || line.starts_with("work_dir=")
+                        || line.starts_with("stage_root=")
+                        || line.starts_with("resource:")
+                        || line.starts_with("pipeline:")
+                        || line.starts_with("mode=")
+                        || line.starts_with("volumes=")
+                        || line.starts_with("budget_from_volumes:")
+                    {
+                        out.push_str(line);
+                        out.push('\n');
+                    }
+                }
+                Ok(out)
             }
         }
         Commands::Restore {
@@ -431,6 +591,32 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                 dest.display(),
                 verify
             ))
+        }
+        Commands::Verify {
+            mapping,
+            archives_root,
+            quick,
+        } => {
+            let archives_root =
+                archives_root.unwrap_or_else(|| default_verify_archives_root(&mapping));
+            let req = VerifyRequest {
+                mapping_path: mapping,
+                archives_root,
+                quick,
+            };
+            let report =
+                VerifyMapping::new(&engine, &mapping_store, &fs, &hasher).execute(&req)?;
+            for line in &report.messages {
+                eprintln!("{line}");
+            }
+            for issue in &report.issues {
+                eprintln!("issue: {issue}");
+            }
+            if report.is_ok() {
+                Ok(format!("{}\n", report.summary_line()))
+            } else {
+                Err(ArchiveError::VerifyFailed(report.summary_line()))
+            }
         }
     }
 }

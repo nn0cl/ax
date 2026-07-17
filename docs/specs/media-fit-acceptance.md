@@ -7,7 +7,7 @@ Issue: LISS-0002
 | # | Behavior | Automated test | Status |
 |---|----------|----------------|--------|
 | A1 | 1 folder fits → 1 archive under that folder | `pack_restore::pack_one_folder_one_archive_when_fits` | covered |
-| A2 | Oversized folder splits by extension | `pack_restore::pack_splits_by_extension_when_folder_too_large` + `pack_plan::oversized_folder_splits_by_extension` | covered |
+| A2 | Folder never split; multi-folder merge under budget | `pack_keeps_one_folder_together_when_over_budget`, `pack_merges_multiple_folders_under_budget`, pack_plan unit tests | covered |
 | A3 | Huge single file alone, no byte split | `pack_restore::pack_accepts_huge_single_file` + `pack_plan::huge_file_alone_even_over_budget` | covered |
 | A4 | Empty dirs in mapping + restore | `pack_restore::pack_records_and_restores_empty_directories` | covered |
 | A5 | Round-trip bytes preserved | A1 / A3 / tar.zst tests | covered |

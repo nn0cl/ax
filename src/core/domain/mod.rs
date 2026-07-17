@@ -3,15 +3,26 @@ mod format;
 mod mapping;
 mod media;
 mod pack_plan;
+mod pack_state;
 mod path_safety;
+mod resource_check;
 mod transfer_estimate;
+mod volume_assign;
 
 pub use error::ArchiveError;
 pub use format::ArchiveFormat;
 pub use mapping::{MappingArchive, MappingManifest, MappingMember, MAPPING_VERSION};
 pub use media::{effective_budget, mapping_reserve, parse_size, ConnectionKind, MediaKind};
 pub use pack_plan::{
-    assign_archive_paths, plan_pack, PackPlan, PackUnit, SourceFile,
+    assign_archive_paths, plan_pack, plan_pack_with_progress, PackPlan, PackUnit, SourceFile,
+};
+pub use pack_state::{
+    fingerprint_members, PackPlanFile, PlanUnitRecord, PlanUnitStatus, PLAN_FILE_NAME,
+    PLAN_FILE_VERSION,
+};
+pub use resource_check::{
+    estimate_disk_requirement, evaluate_resources, DiskRequirement, ResourceFinding, ResourceLevel,
+    ResourcePlanInput,
 };
 pub use path_safety::{is_safe_member_path, normalize_member_path, safe_join};
 pub use transfer_estimate::{
@@ -19,6 +30,9 @@ pub use transfer_estimate::{
     format_estimate_report_with_meta, human_bytes, practical_throughput_bytes_per_sec,
     EstimateRequest, MediaFacts, TransferEstimate, DEFAULT_TARGET_SECS, MAX_UNIT_BYTES,
     MIN_UNIT_BYTES,
+};
+pub use volume_assign::{
+    assign_volume_paths, budget_from_volume_count, count_volumes_needed,
 };
 
 /// Metadata for one member inside an archive.

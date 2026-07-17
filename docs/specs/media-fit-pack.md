@@ -13,12 +13,13 @@
 
 | 項目 | 決定 |
 |------|------|
-| 分割の第一原則 | **できるだけ 1 フォルダ = 1 アーカイブ** |
-| フォルダ過大時 | そのフォルダ内の**直下ファイル**を **拡張子ごとにまとめて**圧縮 |
-| 予算超過の 1 ファイル | **受け入れ**、分割せず単独アーカイブ |
-| 単独閾値 | 予算と同じ。1 ファイルなら閾値超過可 |
+| 分割の第一原則 | **同一フォルダ内のファイルは生き別れにしない**（フォルダは原子単位） |
+| 複数フォルダ | 予算内なら **複数フォルダを 1 アーカイブに同梱**（推奨） |
+| フォルダが予算超過 | そのフォルダだけで 1 アーカイブ（中を分割しない） |
+| 予算超過の 1 ファイル | 所属フォルダごと受け入れ（バイト分割しない） |
+| 予算の測り方 | 当面 **論理サイズ**（圧縮後は通常より小さい。厳密な圧縮後予算は ADR 0013 延期） |
 | 空ディレクトリ | マッピングに記録し restore で再現 |
-| 配置 | 階層に散在（各フォルダ下に `part-NNNN.*`） |
+| 配置 | 階層散在。複数フォルダ同梱時は **最長共通親** の下に `part-NNNN.*` |
 | マッピング | JSON |
 | 形式 | `zip`, `tar.gz`, およびマルチスレッド向け `tar.zst` (zstd) |
 | CLI | `pack` / `restore` を追加。既存 `create`/`list`/`extract` は維持 |
@@ -27,15 +28,14 @@
 ## EARS
 
 When the user packs a source directory with a media budget, the system shall
-prefer one archive per directory for that directory's immediate files when
-their total logical size is within budget.
+treat each directory's immediate files as an atomic bundle that is never split
+across archives.
 
-When a directory's immediate files exceed the budget, the system shall group
-those files by file extension and pack each group (further splitting a group
-by size only when the group still exceeds the budget).
+When packing, the system shall merge consecutive folder bundles (path order)
+into one archive while the sum of their logical sizes stays within budget.
 
-When a single file exceeds the budget, the system shall still place it alone
-in one archive without splitting the file bytes.
+When a single folder's immediate files exceed the budget, the system shall
+still put that entire folder in one archive (no intra-folder split).
 
 When packing completes, the system shall write a JSON mapping that lists every
 archive, every member with original relative path, and every empty directory.
@@ -52,17 +52,20 @@ Scenario: One folder fits in one archive
   Then exactly one archive is placed under "docs/"
   And the mapping lists those files under that archive
 
-Scenario: Oversized folder splits by extension
+Scenario: Oversized folder stays in one archive
   Given directory "photos" whose immediate files exceed the budget
-  And files with extensions ".jpg" and ".png"
   When pack runs
-  Then jpg files and png files are not mixed in the same archive
-  unless a further size split within one extension is required
+  Then exactly one archive contains all immediate files of "photos"
 
-Scenario: Huge single file is accepted alone
-  Given a file larger than the budget
+Scenario: Multiple folders merge under budget
+  Given sibling folders each small enough that their sum fits the budget
   When pack runs
-  Then the mapping contains one archive whose only member is that file
+  Then those folders' files appear in the same archive
+
+Scenario: Huge folder is accepted without byte-splitting files
+  Given a folder whose total size exceeds the budget
+  When pack runs
+  Then all files of that folder remain in one archive
 
 Scenario: Empty directories are restored
   Given an empty directory "empty/nested" under the source
@@ -86,17 +89,22 @@ Scenario: Round-trip preserves file bytes
 ### アルゴリズム
 
 ```text
-for each directory D (including root), with immediate files F:
-  if F is empty:
-    record D as empty-dir candidate if D has no children files anywhere
-      handled globally: any dir with zero files in whole subtree still listed
-  else if sum(size(f) for f in F) <= budget:
-    emit one PackUnit for F   // 1フォルダ1アーカイブ
+// 1) 直下ファイルごとに FolderBundle を作る（フォルダは原子単位）
+// 2) パス順で greedy merge:
+current = empty
+for each bundle B in path order:
+  if B.size > budget:
+    flush current
+    emit unit { B } alone   // フォルダ内は分割しない
+  else if current.total + B.size > budget:
+    flush current
+    current = { B }
   else:
-    group F by lowercase extension (no-extension → "")
-    for each extension group G in stable order:
-      bin-pack G into units with capacity = budget
-      // 単一ファイルが budget 超過でも 1 ユニットとして emit（分割しない）
+    current.add(B)
+flush current
+
+// placement_dir = ユニット内フォルダ群の最長共通親
+// empty directories: ファイルを持たないディレクトリを mapping に記録
 ```
 
 空ディレクトリ: ソース上に存在し、**直下にも子孫にもファイルが無い**
@@ -258,6 +266,7 @@ SIZE: 整数バイト、または `700M` / `4G` 形式。
 
 ## Ambiguities (resolved)
 
-- 拡張子グループ内がなお予算超過 → サイズ順ビンパッキング、単独超過は 1 アーカイブ
-- 拡張子なし → 空文字キーで 1 グループ
-- 大文字小文字 → 拡張子は小文字化して比較
+- 同一フォルダ内は拡張子でもサイズでも分割しない（生き別れ禁止）
+- 複数フォルダ同梱はパス順 greedy（局所性を保ちやすい）
+- 予算は論理サイズ。圧縮後ターゲットは将来 ADR で厳密化可能
+- 配置は同梱フォルダの最長共通親

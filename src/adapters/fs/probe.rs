@@ -1,8 +1,9 @@
 //! Probe free space and best-effort connection class for a destination path.
 
+use crate::adapters::fs::space;
 use crate::core::domain::{ArchiveError, ConnectionKind};
 use crate::core::ports::{MediaProbe, ProbedMedia};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Default)]
 pub struct LocalMediaProbe;
@@ -19,8 +20,8 @@ impl MediaProbe for LocalMediaProbe {
         path: &Path,
         connection_hint: Option<ConnectionKind>,
     ) -> Result<ProbedMedia, ArchiveError> {
-        let space_path = nearest_existing_dir(path)?;
-        let (free_bytes, total_bytes) = volume_space(&space_path)?;
+        let (free_bytes, total_bytes) = space::disk_space(path)?;
+        let space_path = path.to_path_buf();
 
         let (connection, detection) = if let Some(hint) = connection_hint {
             (hint, "cli_hint".to_string())
@@ -39,66 +40,6 @@ impl MediaProbe for LocalMediaProbe {
             detection,
         })
     }
-}
-
-fn nearest_existing_dir(path: &Path) -> Result<PathBuf, ArchiveError> {
-    let mut cur = if path.exists() {
-        if path.is_dir() {
-            path.to_path_buf()
-        } else {
-            path.parent()
-                .unwrap_or_else(|| Path::new("."))
-                .to_path_buf()
-        }
-    } else {
-        path.to_path_buf()
-    };
-
-    loop {
-        if cur.exists() {
-            return Ok(if cur.is_dir() {
-                cur
-            } else {
-                cur.parent()
-                    .unwrap_or_else(|| Path::new("."))
-                    .to_path_buf()
-            });
-        }
-        match cur.parent() {
-            Some(p) if p != cur => cur = p.to_path_buf(),
-            _ => {
-                return Ok(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-            }
-        }
-    }
-}
-
-#[cfg(unix)]
-fn volume_space(path: &Path) -> Result<(u64, u64), ArchiveError> {
-    use std::ffi::CString;
-    use std::io;
-    use std::os::unix::ffi::OsStrExt;
-
-    let c_path = CString::new(path.as_os_str().as_bytes())
-        .map_err(|e| ArchiveError::Engine(format!("path for statvfs: {e}")))?;
-
-    // SAFETY: c_path is a valid C string; statvfs writes into a local struct.
-    unsafe {
-        let mut stat: libc::statvfs = std::mem::zeroed();
-        if libc::statvfs(c_path.as_ptr(), &mut stat) != 0 {
-            return Err(ArchiveError::Io(io::Error::last_os_error()));
-        }
-        let frsize = stat.f_frsize as u64;
-        let free = stat.f_bavail as u64 * frsize;
-        let total = stat.f_blocks as u64 * frsize;
-        Ok((free, total))
-    }
-}
-
-#[cfg(not(unix))]
-fn volume_space(path: &Path) -> Result<(u64, u64), ArchiveError> {
-    let _ = path;
-    Ok((0, 0))
 }
 
 /// Best-effort platform detection. Prefer `diskutil` Protocol on macOS.

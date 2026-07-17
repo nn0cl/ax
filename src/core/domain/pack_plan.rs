@@ -1,6 +1,7 @@
-//! Pure packing planner: 1 folder → 1 archive when possible; else by extension.
+//! Pure packing planner: folder-atomic bundles, multi-folder merge up to budget.
 
 use super::ArchiveFormat;
+use std::collections::HashMap;
 
 /// A source file relative to the pack root.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +36,7 @@ impl SourceFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackUnit {
     /// Directory under which the archive file will be placed (relative).
+    /// For multi-folder units this is the longest common parent.
     pub placement_dir: String,
     pub files: Vec<SourceFile>,
 }
@@ -52,37 +54,111 @@ pub struct PackPlan {
     pub empty_directories: Vec<String>,
 }
 
+/// Immediate files of one directory — never split across archives.
+#[derive(Debug, Clone)]
+struct FolderBundle {
+    dir: String,
+    files: Vec<SourceFile>,
+    size: u64,
+}
+
+/// Progress while planning (bundles_done, bundles_total, units_so_far).
+pub type PlanProgressFn<'a> = dyn Fn(usize, usize, usize) + 'a;
+
 /// Build a pack plan from scanned files and empty directories.
 ///
-/// Rules (accepted spec):
-/// - Prefer one unit per directory for that directory's *immediate* files.
-/// - If immediate files exceed `budget`, group by extension then bin-pack.
-/// - A single file may exceed `budget` and still forms one unit (no byte split).
+/// Rules (Adjudicator 2026-07-17, revised):
+/// - Files that share the same parent directory always stay in the same archive
+///   (no intra-folder split / 生き別れ).
+/// - Multiple folders may be merged into one archive while under `budget`
+///   (logical size; compressed archives are usually smaller).
+/// - A single folder larger than `budget` still becomes one archive alone.
+/// - A single file larger than `budget` is not byte-split (stays with its folder).
 pub fn plan_pack(
+    files: Vec<SourceFile>,
+    empty_directories: Vec<String>,
+    budget: u64,
+) -> PackPlan {
+    plan_pack_with_progress(files, empty_directories, budget, &|_, _, _| {})
+}
+
+/// Same as [`plan_pack`], with progress: (bundles_done, bundles_total, units_so_far).
+pub fn plan_pack_with_progress(
     mut files: Vec<SourceFile>,
     empty_directories: Vec<String>,
     budget: u64,
+    on_progress: &PlanProgressFn<'_>,
 ) -> PackPlan {
     let budget = budget.max(1);
     files.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
 
-    // Group by parent directory.
-    let mut by_dir: Vec<(String, Vec<SourceFile>)> = Vec::new();
+    // Group by parent directory → atomic folder bundles (DFS path order).
+    let mut bundles: Vec<FolderBundle> = Vec::new();
     for f in files {
         let dir = f.parent_dir().to_string();
-        if let Some(last) = by_dir.last_mut() {
-            if last.0 == dir {
-                last.1.push(f);
+        if let Some(last) = bundles.last_mut() {
+            if last.dir == dir {
+                last.size = last.size.saturating_add(f.size);
+                last.files.push(f);
                 continue;
             }
         }
-        by_dir.push((dir, vec![f]));
+        let size = f.size;
+        bundles.push(FolderBundle {
+            dir,
+            files: vec![f],
+            size,
+        });
     }
 
-    let mut units = Vec::new();
-    for (dir, dir_files) in by_dir {
-        units.extend(plan_directory(&dir, dir_files, budget));
+    let bundles_total = bundles.len();
+    let mut units: Vec<PackUnit> = Vec::new();
+    let mut current: Vec<FolderBundle> = Vec::new();
+    let mut current_size: u64 = 0;
+
+    let flush = |current: &mut Vec<FolderBundle>,
+                 current_size: &mut u64,
+                 units: &mut Vec<PackUnit>| {
+        if current.is_empty() {
+            return;
+        }
+        let dirs: Vec<String> = current.iter().map(|b| b.dir.clone()).collect();
+        let placement_dir = common_parent_dir(&dirs);
+        let mut files = Vec::new();
+        for b in current.drain(..) {
+            files.extend(b.files);
+        }
+        *current_size = 0;
+        units.push(PackUnit {
+            placement_dir,
+            files,
+        });
+    };
+
+    for (i, bundle) in bundles.into_iter().enumerate() {
+        // Folder larger than budget: never split; emit alone after flushing.
+        if bundle.size > budget {
+            flush(&mut current, &mut current_size, &mut units);
+            let placement_dir = bundle.dir.clone();
+            units.push(PackUnit {
+                placement_dir,
+                files: bundle.files,
+            });
+        } else if !current.is_empty() && current_size.saturating_add(bundle.size) > budget {
+            flush(&mut current, &mut current_size, &mut units);
+            current_size = bundle.size;
+            current.push(bundle);
+        } else {
+            current_size = current_size.saturating_add(bundle.size);
+            current.push(bundle);
+        }
+
+        if i % 256 == 0 || i + 1 == bundles_total {
+            on_progress(i + 1, bundles_total, units.len() + usize::from(!current.is_empty()));
+        }
     }
+    flush(&mut current, &mut current_size, &mut units);
+    on_progress(bundles_total, bundles_total, units.len());
 
     let mut empty_directories = empty_directories;
     empty_directories.sort();
@@ -94,104 +170,52 @@ pub fn plan_pack(
     }
 }
 
-fn plan_directory(dir: &str, files: Vec<SourceFile>, budget: u64) -> Vec<PackUnit> {
-    if files.is_empty() {
-        return Vec::new();
+/// Longest common parent path of directory relative paths (`/` separated).
+fn common_parent_dir(dirs: &[String]) -> String {
+    if dirs.is_empty() {
+        return String::new();
+    }
+    if dirs.len() == 1 {
+        return dirs[0].clone();
     }
 
-    let total: u64 = files.iter().map(|f| f.size).sum();
-    if total <= budget {
-        return vec![PackUnit {
-            placement_dir: dir.to_string(),
-            files,
-        }];
-    }
-
-    // Group by extension.
-    let mut by_ext: Vec<(String, Vec<SourceFile>)> = Vec::new();
-    let mut sorted = files;
-    sorted.sort_by(|a, b| {
-        a.extension_key()
-            .cmp(&b.extension_key())
-            .then_with(|| a.rel_path.cmp(&b.rel_path))
-    });
-
-    for f in sorted {
-        let ext = f.extension_key();
-        if let Some(last) = by_ext.last_mut() {
-            if last.0 == ext {
-                last.1.push(f);
-                continue;
+    let split: Vec<Vec<&str>> = dirs
+        .iter()
+        .map(|d| {
+            if d.is_empty() {
+                Vec::new()
+            } else {
+                d.split('/').filter(|s| !s.is_empty()).collect()
             }
+        })
+        .collect();
+
+    let mut prefix: Vec<&str> = Vec::new();
+    let min_len = split.iter().map(|p| p.len()).min().unwrap_or(0);
+    for i in 0..min_len {
+        let part = split[0][i];
+        if split.iter().all(|p| p[i] == part) {
+            prefix.push(part);
+        } else {
+            break;
         }
-        by_ext.push((ext, vec![f]));
     }
-
-    let mut units = Vec::new();
-    for (_ext, group) in by_ext {
-        units.extend(bin_pack(dir, group, budget));
-    }
-    units
-}
-
-/// First-fit packing; a single oversized file always gets its own unit.
-fn bin_pack(dir: &str, files: Vec<SourceFile>, budget: u64) -> Vec<PackUnit> {
-    let mut units: Vec<PackUnit> = Vec::new();
-    let mut current: Vec<SourceFile> = Vec::new();
-    let mut current_size: u64 = 0;
-
-    for f in files {
-        if f.size >= budget {
-            if !current.is_empty() {
-                units.push(PackUnit {
-                    placement_dir: dir.to_string(),
-                    files: std::mem::take(&mut current),
-                });
-                current_size = 0;
-            }
-            units.push(PackUnit {
-                placement_dir: dir.to_string(),
-                files: vec![f],
-            });
-            continue;
-        }
-
-        if !current.is_empty() && current_size + f.size > budget {
-            units.push(PackUnit {
-                placement_dir: dir.to_string(),
-                files: std::mem::take(&mut current),
-            });
-            current_size = 0;
-        }
-        current_size += f.size;
-        current.push(f);
-    }
-
-    if !current.is_empty() {
-        units.push(PackUnit {
-            placement_dir: dir.to_string(),
-            files: current,
-        });
-    }
-    units
+    prefix.join("/")
 }
 
 /// Assign archive relative paths for each unit (scattered hierarchy).
+/// Uses HashMap counters so cost is O(units), not O(units²).
 pub fn assign_archive_paths(units: &[PackUnit], format: ArchiveFormat) -> Vec<String> {
     let ext = format.file_extension();
-    let mut counters: Vec<(String, u32)> = Vec::new();
+    let mut counters: HashMap<&str, u32> = HashMap::new();
     let mut paths = Vec::with_capacity(units.len());
 
     for unit in units {
         let dir = unit.placement_dir.as_str();
         let n = {
-            if let Some(c) = counters.iter_mut().find(|(d, _)| d == dir) {
-                c.1 += 1;
-                c.1
-            } else {
-                counters.push((dir.to_string(), 1));
-                1
-            }
+            let entry = counters.entry(dir).or_insert(0);
+            *entry += 1;
+            *entry
         };
         let name = format!("part-{n:04}.{ext}");
         let path = if dir.is_empty() {
@@ -216,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn one_folder_one_archive_when_fits() {
+    fn one_folder_stays_together() {
         let plan = plan_pack(
             vec![f("docs/a.txt", 100), f("docs/b.txt", 100)],
             vec![],
@@ -228,7 +252,8 @@ mod tests {
     }
 
     #[test]
-    fn oversized_folder_splits_by_extension() {
+    fn folder_never_split_even_when_over_budget() {
+        // Same folder, total 1200 > budget 1000 → still ONE unit (no extension split).
         let plan = plan_pack(
             vec![
                 f("photos/a.jpg", 400),
@@ -238,40 +263,73 @@ mod tests {
             vec![],
             1000,
         );
-        // total 1200 > 1000 → by ext: jpg(800) one unit, png(400) one unit
-        assert_eq!(plan.units.len(), 2);
-        let exts: Vec<Vec<String>> = plan
-            .units
+        assert_eq!(plan.units.len(), 1);
+        assert_eq!(plan.units[0].files.len(), 3);
+        assert!(plan.units[0]
+            .files
             .iter()
-            .map(|u| u.files.iter().map(|x| x.extension_key()).collect())
-            .collect();
-        assert!(exts.iter().all(|e| e.windows(2).all(|w| w[0] == w[1])));
-        assert!(plan
-            .units
-            .iter()
-            .any(|u| u.files.iter().all(|x| x.extension_key() == "jpg")));
-        assert!(plan
-            .units
-            .iter()
-            .any(|u| u.files.iter().all(|x| x.extension_key() == "png")));
+            .all(|x| x.parent_dir() == "photos"));
     }
 
     #[test]
-    fn huge_file_alone_even_over_budget() {
+    fn multiple_folders_merge_under_budget() {
+        // three sibling folders 300 each, budget 1000 → one archive
+        let plan = plan_pack(
+            vec![
+                f("a/x.txt", 300),
+                f("b/y.txt", 300),
+                f("c/z.txt", 300),
+            ],
+            vec![],
+            1000,
+        );
+        assert_eq!(plan.units.len(), 1);
+        assert_eq!(plan.units[0].files.len(), 3);
+        // common parent of a,b,c is root
+        assert_eq!(plan.units[0].placement_dir, "");
+    }
+
+    #[test]
+    fn merge_stops_before_exceeding_budget() {
+        // 400+400+400 with budget 1000 → first two together (800), third alone
+        let plan = plan_pack(
+            vec![
+                f("a/x.txt", 400),
+                f("b/y.txt", 400),
+                f("c/z.txt", 400),
+            ],
+            vec![],
+            1000,
+        );
+        assert_eq!(plan.units.len(), 2);
+        assert_eq!(plan.units[0].files.len(), 2);
+        assert_eq!(plan.units[1].files.len(), 1);
+    }
+
+    #[test]
+    fn nested_common_parent_placement() {
+        let plan = plan_pack(
+            vec![
+                f("docs/a/x.txt", 100),
+                f("docs/b/y.txt", 100),
+            ],
+            vec![],
+            1000,
+        );
+        assert_eq!(plan.units.len(), 1);
+        assert_eq!(plan.units[0].placement_dir, "docs");
+    }
+
+    #[test]
+    fn huge_file_folder_stays_with_siblings_in_same_dir() {
         let plan = plan_pack(
             vec![f("big/video.mkv", 5000), f("big/note.txt", 10)],
             vec![],
             1000,
         );
-        // total 5010 > budget → by ext: mkv alone, txt alone (or txt in own unit)
-        assert!(plan
-            .units
-            .iter()
-            .any(|u| u.files.len() == 1 && u.files[0].rel_path == "big/video.mkv"));
-        assert!(plan
-            .units
-            .iter()
-            .any(|u| u.files.iter().any(|x| x.rel_path == "big/note.txt")));
+        // Same folder → one unit even if over budget
+        assert_eq!(plan.units.len(), 1);
+        assert_eq!(plan.units[0].files.len(), 2);
     }
 
     #[test]
@@ -305,5 +363,29 @@ mod tests {
                 "part-0001.zip",
             ]
         );
+    }
+
+    #[test]
+    fn assign_paths_many_dirs_is_linear() {
+        let units: Vec<PackUnit> = (0..5_000)
+            .map(|i| PackUnit {
+                placement_dir: format!("d{i}"),
+                files: vec![f(&format!("d{i}/f.txt"), 1)],
+            })
+            .collect();
+        let paths = assign_archive_paths(&units, ArchiveFormat::Zip);
+        assert_eq!(paths.len(), 5_000);
+        assert_eq!(paths[0], "d0/part-0001.zip");
+        assert_eq!(paths[4999], "d4999/part-0001.zip");
+    }
+
+    #[test]
+    fn common_parent_helpers() {
+        assert_eq!(
+            common_parent_dir(&["docs/a".into(), "docs/b".into()]),
+            "docs"
+        );
+        assert_eq!(common_parent_dir(&["a".into(), "b".into()]), "");
+        assert_eq!(common_parent_dir(&["only".into()]), "only");
     }
 }

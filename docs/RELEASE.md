@@ -7,12 +7,24 @@ How to cut a versioned release of **archiver**.
 - **SemVer** in `Cargo.toml` (`major.minor.patch`)
 - Git tag: `vX.Y.Z` (e.g. `v0.0.1`)
 - Document changes in `CHANGELOG.md` under `[Unreleased]`, then move to `[X.Y.Z]` on release
+- Product meaning of 0.x: **[ADR 0014](architecture/adr/0014-product-quality-versioning-and-support.md)**
 
 | Bump | When |
 |------|------|
-| **patch** | Bugfix, docs, internal refactors (no intentional CLI break) |
-| **minor** | New flags/commands, compatible behavior extensions |
-| **major** | Breaking CLI/mapping/plan schema changes |
+| **patch** | Bugfixes, docs, internal refactors (no intentional CLI break) |
+| **minor** | New flags/commands, compatible behavior extensions; **`0.1.0` = usable baseline** (documented primary path) |
+| **major** | Breaking CLI/mapping/plan schema changes; **`1.0.0` requires revisiting ADR 0014** |
+
+### Usable baseline (`0.1.0`) checklist
+
+Before tagging `v0.1.0`:
+
+- [ ] `cargo test` + clippy green
+- [ ] CHANGELOG section for 0.1.0 lists user-visible features
+- [ ] Primary path documented: pack / restore / verify / estimate
+- [ ] Plan v2 + mapping integrity (ADR 0015) unchanged or migration notes
+- [ ] Optional: spot-check `docs/QA.md`
+- [ ] Disclaimer / support tiers still accurate (ADR 0014, 0019)
 
 ## Preconditions
 

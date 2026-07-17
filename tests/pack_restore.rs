@@ -634,6 +634,121 @@ fn pack_resume_without_plan_fails() {
         .stderr(predicate::str::contains("--resume requires existing plan"));
 }
 
+/// Content-class estimate (ADR 0018): media-heavy tree should mention image_lossy.
+#[test]
+fn pack_dry_run_size_estimate_classifies_media() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    // Fake JPEG payload (extension drives class; content need not be valid JPEG).
+    write_file(&source.join("photos/a.jpg"), &vec![0xFFu8; 50_000]);
+    write_file(&source.join("notes.txt"), b"hello text");
+    let output = dir.path().join("out");
+
+    archiver()
+        .args([
+            "pack",
+            "--source",
+            source.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--target-size",
+            "10M",
+            "--format",
+            "tar.zst",
+            "--dry-run",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("size_estimate:"))
+        .stdout(predicate::str::contains("image_lossy"))
+        .stdout(predicate::str::contains("text"))
+        .stdout(predicate::str::contains("algo_eff=1.00"));
+}
+
+/// Config jobs overridden by CLI (ADR 0017).
+#[test]
+fn pack_config_cli_overrides_jobs() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    write_file(&source.join("a.txt"), b"cfg-override");
+    let output = dir.path().join("out");
+    let conf = dir.path().join("job.inf");
+    fs::write(
+        &conf,
+        format!(
+            r#"[pack]
+source = {}
+output = {}
+target_size = 1M
+format = zip
+jobs = 1
+dry_run = true
+"#,
+            source.display(),
+            output.display()
+        ),
+    )
+    .unwrap();
+
+    archiver()
+        .args([
+            "pack",
+            "--config",
+            conf.to_str().unwrap(),
+            "--jobs",
+            "2",
+            "--progress",
+            "false",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("dry-run"));
+}
+
+/// Sequential re-pack without --resume overwrites (concurrent multi-writer remains unsupported).
+#[test]
+fn pack_same_output_without_resume_rewrites() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    write_file(&source.join("a.txt"), b"first");
+    let output = dir.path().join("out");
+
+    let args = [
+        "pack",
+        "--source",
+        source.to_str().unwrap(),
+        "--output",
+        output.to_str().unwrap(),
+        "--target-size",
+        "1M",
+        "--format",
+        "zip",
+        "--jobs",
+        "1",
+    ];
+    archiver().args(args).assert().success();
+    assert!(output.join("archiver-map.json").exists());
+
+    write_file(&source.join("a.txt"), b"second-version");
+    archiver().args(args).assert().success();
+
+    let dest = dir.path().join("restored");
+    archiver()
+        .args([
+            "restore",
+            "--mapping",
+            output.join("archiver-map.json").to_str().unwrap(),
+            "--dest",
+            dest.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(dest.join("a.txt")).unwrap(),
+        "second-version"
+    );
+}
+
 #[test]
 fn pack_resume_skips_completed_unit() {
     let dir = tempdir().unwrap();

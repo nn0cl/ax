@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Logged as `size_estimate:` / resource informational line (free-space gate still logical worst-case)
 - Content-class + algorithm estimate: extension → class (text/source/image/video/…)
   × format efficiency (`ratio ≈ 1 - (1 - base_zstd) * eff`); class breakdown in `size_estimate:`
+- Product ADRs **0014–0019** (quality/versioning, strict integrity, verify_stage,
+  config precedence, content estimates, support tiers) + `docs/architecture/adr/README.md`
+- Manual QA checklist: `docs/QA.md`
 
 ### Removed / breaking
 

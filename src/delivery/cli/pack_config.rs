@@ -347,4 +347,53 @@ format = zip
         assert_eq!(r.jobs, 3);
         assert!(matches!(r.format, CliFormat::Zip));
     }
+
+    #[test]
+    fn cli_jobs_override_config_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let conf = dir.path().join("p.inf");
+        std::fs::write(
+            &conf,
+            r#"[pack]
+source = /s
+output = /o
+target_size = 1M
+jobs = 1
+format = tar.zst
+verify_stage = true
+"#,
+        )
+        .unwrap();
+        let cli = PackCliArgs {
+            source: None,
+            output: None,
+            target_size: None,
+            media: None,
+            auto_size: false,
+            volumes: None,
+            connection: None,
+            target_secs: None,
+            throughput: None,
+            measure: false,
+            format: Some(CliFormat::Zip),
+            mapping: None,
+            dry_run: false,
+            verbose: false,
+            progress: None,
+            jobs: Some(8),
+            work_dir: None,
+            keep_stage: false,
+            resume: false,
+            check_resources: None,
+            force_resources: false,
+            resource_safety_factor: None,
+            compress_only: false,
+            verify_stage: false, // config true still enables
+        };
+        let r = resolve_pack_settings(cli, Some(&conf)).unwrap();
+        assert_eq!(r.jobs, 8);
+        assert!(matches!(r.format, CliFormat::Zip));
+        assert!(r.verify_stage); // config true, CLI false → enabled
+        assert_eq!(r.source, PathBuf::from("/s"));
+    }
 }

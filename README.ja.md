@@ -261,6 +261,17 @@ archiver --help
 
 **利用は自己責任（use at your own risk）です。**
 
+### サポート区分（[ADR 0019](docs/architecture/adr/0019-supported-platforms-and-verification-scope.md)）
+
+| 区分 | 範囲 |
+|------|------|
+| **Supported** | macOS / Linux、通常ファイル、主経路 pack/restore/verify/estimate、plan v2 |
+| **Best-effort** | 低速 USB、巨大単一ファイル、`--verify-stage`、コンテンツ種別のサイズ試算 |
+| **Unsupported** | Windows 保証なし、同一 output への並列 pack、数百万 inode の体系保証 |
+
+手動チェックリスト: [`docs/QA.md`](docs/QA.md)。製品方針: [ADR 0014](docs/architecture/adr/0014-product-quality-versioning-and-support.md)。  
+製品 ADR 要約: [`docs/architecture/adr/README.md`](docs/architecture/adr/README.md)。
+
 ### 体系的に検証しきれていない領域（例）
 
 テストや実運用でカバーしている範囲は限定的です。次のようなケースは  
@@ -272,7 +283,7 @@ archiver --help
 | **特殊権限** | root 専用、ACL、macOS TCC（Desktop/Documents）、SIP、読み取り不可ファイル。sudo や権限不足でスキップ/失敗 |
 | **壊れた / 不安定な USB** | 途中切断、書き込みエラー、I/O タイムアウト、見せかけの成功、リトライ不能なメディア不良 |
 | **文字化け・特殊名** | 異体字、制御文字、非常に長いファイル名、ケースのみが異なる名（OS 依存） |
-| **同時実行** | 同一 output / work-dir への並列 pack、他プロセスとの同時書き込み |
+| **同時実行** | 同一 output / work-dir への並列 pack、他プロセスとの同時書き込み（**Unsupported**） |
 | **全 OS マトリクス** | 主に macOS 実運用 + Linux CI。Windows 等は未保証 |
 
 これらは「テストが無いから品質ゼロ」ではなく、**境界条件を網羅した保証はしていない**という意味です。
@@ -533,7 +544,7 @@ docs/                # 仕様・ADR・issue・協働ドキュメント
 - ファイル内容のバイト分割
 - 複数物理メディアへの自動ボリュームまたぎ
 - 暗号化アーカイブ
-- 圧縮後サイズを厳密に予算とするモード（[ADR 0013](docs/architecture/adr/0013-compressed-size-packing-mode.md) で延期）
+- 圧縮後サイズを厳密に予算とするモード（[ADR 0013](docs/architecture/adr/0013-compressed-size-packing-mode.md) で延期；試算は [ADR 0018](docs/architecture/adr/0018-content-algorithm-size-estimate.md)）
 - GUI / TUI
 
 ---

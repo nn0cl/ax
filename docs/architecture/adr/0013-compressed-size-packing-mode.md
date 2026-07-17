@@ -49,8 +49,16 @@ Rationale:
 - If revisited: prefer **B** first (config ratio), then D for zip/tar writers
   that can report compressed bytes mid-stream.
 
+## Related (not a packing change)
+
+- **ADR 0018** adds content-class × algorithm **estimates** for progress ETA and
+  `size_estimate:` logs. That does **not** change unit budgeting (still logical).
+- Free-space hard checks remain logical × safety (worst case).
+
 ## Follow-up
 
-- Do not file implementation LISS until Adjudicator reopens this ADR.
+- Do not file implementation LISS for C/D until this ADR is reopened.
+- Option B (`budget *= safety`) may be added as an optional config knob without
+  reopening C/D.
 - Related: transfer estimate (LISS-0006/0007) remains the right lever for
   USB-oriented unit sizing.

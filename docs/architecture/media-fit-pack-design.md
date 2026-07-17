@@ -4,7 +4,8 @@
 
 - **Target behavior**: 1フォルダ1アーカイブ優先、過大時は拡張子分割、メディア/接続で予算調整、JSON マッピングで restore。
 - **Requested phase**: 実装完了（仕様 accepted）
-- **Proposed next phase**: 運用フィードバック / 圧縮後サイズ厳密保証は後続 ADR
+- **Proposed next phase**: 運用フィードバック / 圧縮後サイズ厳密 packing は ADR 0013
+- **Product ADRs**: `docs/architecture/adr/README.md`（0013–0019 要約）
 - **Adjudicator decision needed**: なし（2026-07-17 確定）
 
 ## Context Ledger

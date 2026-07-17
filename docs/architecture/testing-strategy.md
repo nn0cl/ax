@@ -13,9 +13,24 @@ Purpose:
 
 Placement:
 
-- CLI acceptance / integration: `tests/archive_cli.rs` (assert_cmd + tempfile).
+- CLI acceptance / integration: `tests/archive_cli.rs`, `tests/pack_restore.rs`
+  (assert_cmd + tempfile).
 - Domain unit tests: `src/core/domain/*` via `#[cfg(test)]` modules.
 - No UI layer in this project.
+
+### Product-path coverage (archiver)
+
+| Area | Where | Notes |
+|------|--------|------|
+| Pack / restore / verify | `tests/pack_restore.rs` | Primary path |
+| Resume strict (no plan) | `pack_resume_without_plan_fails` | ADR 0015 |
+| Config `.inf` | `pack_from_config_inf` | ADR 0017 |
+| `verify_stage` | `pack_with_verify_stage_succeeds` | ADR 0016 |
+| Content × algo estimate | domain `content_class` + dry-run `size_estimate` | ADR 0018 |
+| Concurrent same output | best-effort assertion (unsupported) | ADR 0019 |
+| Huge trees / flaky USB / Windows | **not** automated | manual `docs/QA.md` |
+
+Manual pre-release: [`docs/QA.md`](../QA.md).
 
 ### Domain Unit Tests
 

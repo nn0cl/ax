@@ -13,6 +13,12 @@ Supported formats: **ZIP**, **TAR**, **TAR.GZ**, **TAR.ZST** (zstd, multi-thread
 
 ## Disclaimer (no warranty)
 
+**Support tiers** (see [ADR 0019](docs/architecture/adr/0019-supported-platforms-and-verification-scope.md)):
+Supported = macOS/Linux primary path; Best-effort = USB / verify_stage / estimates;
+Unsupported = Windows certification, concurrent pack to same output.
+Product ADRs: [docs/architecture/adr/README.md](docs/architecture/adr/README.md).
+Manual QA: [docs/QA.md](docs/QA.md).
+
 This software is provided **AS IS**, without warranty of any kind. Automated tests
 exist to reduce regressions; they do **not** guarantee correctness on every
 environment or dataset. **No SLA.** Use at your own risk.

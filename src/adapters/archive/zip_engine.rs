@@ -2,7 +2,6 @@ use crate::adapters::fs::{collect_pack_entries, ensure_parent_dir};
 use crate::core::domain::{safe_join, ArchiveError, ArchiveMember, MemberSpec};
 use crate::core::interrupt;
 use std::fs::File;
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
@@ -31,7 +30,10 @@ pub fn create_zip_members_with_progress(
     ensure_parent_dir(output)?;
     let file = File::create(output)?;
     let mut zip = ZipWriter::new(file);
-    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    // ZIP64 opt-in: members may exceed 4 GiB (LISS-0017).
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .large_file(true);
 
     for (i, member) in members.iter().enumerate() {
         interrupt::check()?;
@@ -39,9 +41,7 @@ pub fn create_zip_members_with_progress(
         zip.start_file(&member.member_name, options)
             .map_err(|e| ArchiveError::Engine(e.to_string()))?;
         let mut src = File::open(&member.source)?;
-        let mut buf = Vec::new();
-        src.read_to_end(&mut buf)?;
-        zip.write_all(&buf)?;
+        std::io::copy(&mut src, &mut zip)?;
     }
 
     zip.finish()

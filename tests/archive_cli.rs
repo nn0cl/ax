@@ -156,6 +156,48 @@ fn rejects_unknown_format_extension() {
         .stderr(predicate::str::contains("format"));
 }
 
+/// LISS-0017: a single member over 4 GiB requires ZIP64 (`large_file`).
+/// Heavy (streams > 4 GiB through deflate), so ignored in CI per
+/// testing-strategy; run manually with `cargo test -- --ignored`.
+#[test]
+#[ignore = "writes a >4 GiB member; run manually (LISS-0017)"]
+fn create_zip_member_over_4gib_succeeds() {
+    let dir = tempdir().unwrap();
+    let big = dir.path().join("big.bin");
+    let big_len: u64 = (4 << 30) + 16;
+    // Sparse file: reads back as zeros without occupying 4 GiB on disk.
+    fs::File::create(&big).unwrap().set_len(big_len).unwrap();
+
+    let archive = dir.path().join("out.zip");
+    archiver()
+        .args([
+            "create",
+            "--output",
+            archive.to_str().unwrap(),
+            big.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    archiver()
+        .args(["list", archive.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("big.bin"));
+
+    let dest = dir.path().join("dest");
+    archiver()
+        .args([
+            "extract",
+            "--dest",
+            dest.to_str().unwrap(),
+            archive.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert_eq!(fs::metadata(dest.join("big.bin")).unwrap().len(), big_len);
+}
+
 #[test]
 fn rejects_path_traversal_on_zip_extract() {
     use std::io::Write;

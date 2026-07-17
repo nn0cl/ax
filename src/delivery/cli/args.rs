@@ -1,4 +1,7 @@
 //! Clap CLI surface (command definitions only).
+//!
+//! Short binary name `ax` and 2-letter subcommands; long names remain as
+//! visible aliases (`pa` ≡ `pack`, etc.).
 
 use crate::core::domain::{
     ArchiveFormat, ConnectionKind, MediaKind, DEFAULT_TARGET_SECS,
@@ -13,26 +16,67 @@ Author: nn0cl <nn0cl@dstechnology.co.jp>
 DISCLAIMER: This software is provided AS IS, without warranty of any kind,
 express or implied. Automated tests exist; they do not constitute a guarantee.
 Use at your own risk. No SLA.
+
+Binary: ax (Archive eXchange). Default build output: target/*/ax
+
+Commands (short = long alias):
+  cr=create  ex=extract  ls=list  es=estimate  pa=pack  re=restore  ve=verify
+
+Globals:
+  -c, --config PATH     settings (.inf/.ini); CLI overrides file
+  -s, --size SIZE|PRESET  pack budget (also --target-size on pa)
+  -o, --output PATH     pack out / create archive / mapping JSON
+
+Size presets (-s):
+  c2      10 MiB   small units, resume-friendly (alias: low-net)
+  fat32   3.8 GiB  under FAT32 4 GiB file limit
+  flash   1 GiB    typical USB stick balance
+  max     ~no split  large single-archive oriented
+  or numeric: 10M, 700M, 4G, …
+
+Examples:
+  ax pa -i ./data -o ./out -s c2 -f tar.zst
+  ax pa -i ./data -o ./out -s fat32
+  ax es -p /Volumes/USB
+  ax -o backup.zip cr ./src
+  ax re -m ./out/archiver-map.json -d ./restored
+  ax --help
+  ax pa --help
 ";
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "archiver",
+    name = "ax",
     version,
     author = "nn0cl <nn0cl@dstechnology.co.jp>",
-    about = "Media-fit pack/restore archiver (USB / optical unit sizing)",
-    long_about = "Local-first media-fit archiver: pack a source tree into budget-sized \
-archives with JSON mapping, resume, verify, and restore.\n\n\
+    about = "Local-first media-fit archiver — ax (Archive eXchange)",
+    long_about = "Local-first media-fit archiver (Archive eXchange).\n\n\
+Pack a source tree into budget-sized archives with JSON mapping, resume, \
+verify, and restore. Also single-archive create / list / extract.\n\n\
+Default binary name after `cargo build`: ax\n\
+Short subcommands: cr ex ls es pa re ve (long aliases still work).\n\
+Globals: -c config, -s size|preset, -o output.\n\
+Size presets: c2, fat32, flash, max (or 10M / 4G).\n\n\
 Copyright (c) nn0cl@dstechnology.co.jp. All rights reserved.\n\n\
 NO WARRANTY — provided AS IS; use at your own risk. No SLA.",
     after_help = AFTER_HELP,
-    propagate_version = true
+    propagate_version = true,
+    disable_help_subcommand = false,
 )]
 pub struct Cli {
     /// Settings file (`.inf` / `.ini` / key=value). Section `[pack]` for pack.
     /// CLI flags override file values when both are set.
-    #[arg(long, global = true, value_name = "PATH")]
+    #[arg(short = 'c', long = "config", global = true, value_name = "PATH")]
     pub config: Option<PathBuf>,
+
+    /// Pack budget: numeric size (`10M`, `4G`) or preset
+    /// `c2` | `fat32` | `flash` | `max` (see --help).
+    #[arg(short = 's', long = "size", global = true, value_name = "SIZE|PRESET")]
+    pub size: Option<String>,
+
+    /// Output directory, archive path, or mapping JSON path (command-dependent).
+    #[arg(short = 'o', long = "output", global = true, value_name = "PATH")]
+    pub output: Option<PathBuf>,
 
     #[command(subcommand)]
     pub command: Commands,
@@ -106,36 +150,39 @@ impl From<CliConnection> for ConnectionKind {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
-    /// Create a single archive from files and directories
+    /// Create a single archive
+    #[command(name = "cr", visible_alias = "create")]
     Create {
-        #[arg(short, long)]
-        output: PathBuf,
-        #[arg(short, long)]
+        #[arg(short = 'f', long)]
         format: Option<String>,
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
     },
 
-    /// List members of an archive
-    List {
-        archive: PathBuf,
-        #[arg(short, long)]
-        format: Option<String>,
-    },
-
-    /// Extract a single archive into a destination directory
+    /// Extract a single archive
+    #[command(name = "ex", visible_alias = "extract")]
     Extract {
-        #[arg(short, long)]
+        /// Destination directory
+        #[arg(short = 'd', long)]
         dest: PathBuf,
         archive: PathBuf,
-        #[arg(short, long)]
+        #[arg(short = 'f', long)]
         format: Option<String>,
     },
 
-    /// Estimate a fast-transfer pack unit size for a destination volume
+    /// List members of an archive
+    #[command(name = "ls", visible_alias = "list")]
+    List {
+        archive: PathBuf,
+        #[arg(short = 'f', long)]
+        format: Option<String>,
+    },
+
+    /// Estimate fast-transfer pack unit size
+    #[command(name = "es", visible_alias = "estimate")]
     Estimate {
         /// Destination path (USB mount, network share, or local directory)
-        #[arg(short, long)]
+        #[arg(short = 'p', long)]
         path: PathBuf,
 
         /// Connection class (default: auto-detect)
@@ -159,17 +206,19 @@ pub enum Commands {
         measure_sample: Option<String>,
     },
 
-    /// Pack a source tree into media-sized archives with a JSON mapping
+    /// Pack a source tree into media-sized archives
+    #[command(name = "pa", visible_alias = "pack")]
     Pack {
-        /// Source directory (required unless set in --config `[pack] source=`)
-        #[arg(short, long)]
+        /// Source directory (required unless set in config `[pack] source=`)
+        #[arg(short = 'i', long = "source")]
         source: Option<PathBuf>,
 
-        /// Output root (required unless set in --config `[pack] output=`)
-        #[arg(short, long)]
-        output: Option<PathBuf>,
+        /// Output root (or global `-o` / config `output=`)
+        #[arg(long = "out")]
+        pack_output: Option<PathBuf>,
 
-        #[arg(long, conflicts_with_all = ["media", "auto_size"])]
+        /// Budget size or preset (or global `-s`). Same tokens as `--size`.
+        #[arg(long = "target-size", conflicts_with_all = ["media", "auto_size"])]
         target_size: Option<String>,
 
         #[arg(long, conflicts_with_all = ["target_size", "auto_size"])]
@@ -179,8 +228,7 @@ pub enum Commands {
         #[arg(long, conflicts_with_all = ["target_size", "media"], action = clap::ArgAction::SetTrue)]
         auto_size: bool,
 
-        /// Split pack into up to N volume dirs (`vol-001/` …). Capacity = budget
-        /// (or ceil(total/N) if used alone without --target-size/--media/--auto-size)
+        /// Split pack into up to N volume dirs (`vol-001/` …)
         #[arg(long)]
         volumes: Option<u32>,
 
@@ -198,7 +246,7 @@ pub enum Commands {
         measure: bool,
 
         /// Archive format (default: tar.zst, or config `format=`)
-        #[arg(short, long, value_enum)]
+        #[arg(short = 'f', long, value_enum)]
         format: Option<CliFormat>,
 
         #[arg(long)]
@@ -212,70 +260,71 @@ pub enum Commands {
         #[arg(long, short = 'v', action = clap::ArgAction::SetTrue)]
         verbose: bool,
 
-        /// Live progress UI (default: on when TTY). Config: `progress=true|false`
+        /// Live progress UI (default: on when TTY)
         #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
         progress: Option<bool>,
 
-        /// Parallel compress workers (default: CPU count max 8, or config `jobs=`)
-        #[arg(long)]
+        /// Parallel compress workers (default: CPU count max 8)
+        #[arg(long, short = 'j')]
         jobs: Option<usize>,
 
-        /// Base dir for staging: creates a private random subdir, never reuses siblings.
-        /// Stage is deleted by default after pack (success or failure).
+        /// Base dir for staging (private random subdir)
         #[arg(long)]
         work_dir: Option<PathBuf>,
 
-        /// Keep the random stage directory after pack (debug). Default: always delete.
+        /// Keep the random stage directory after pack (debug)
         #[arg(long, action = clap::ArgAction::SetTrue)]
         keep_stage: bool,
 
-        /// Resume from output/archiver-plan.json when present; if missing, start a fresh pack
+        /// Resume from output/archiver-plan.json
         #[arg(long, action = clap::ArgAction::SetTrue)]
         resume: bool,
 
-        /// Check free disk on output/work-dir and soft memory before writing (default: true)
+        /// Check free disk / soft memory before writing (default: true)
         #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
         check_resources: Option<bool>,
 
-        /// Continue even if resource check reports insufficient free space
+        /// Continue even if resource check fails
         #[arg(long, action = clap::ArgAction::SetTrue)]
         force_resources: bool,
 
-        /// Safety multiplier for disk estimates (default 1.0 = need up to remaining logical on output)
+        /// Safety multiplier for disk estimates
         #[arg(long)]
         resource_safety_factor: Option<f64>,
 
-        /// Complete local pack under --output (prefer rename from work-dir; no USB assumption)
+        /// Complete local pack under output (no USB assumption)
         #[arg(long, action = clap::ArgAction::SetTrue)]
         compress_only: bool,
 
-        /// Pre-transfer: re-extract stage archive and match member SHA-256;
-        /// post-transfer: dest archive SHA-256 must equal stage archive SHA-256.
-        /// Config: `verify_stage=true`. Default: off (extra CPU/disk I/O).
+        /// Pre/post transfer integrity (member + archive SHA)
         #[arg(long, action = clap::ArgAction::SetTrue)]
         verify_stage: bool,
     },
 
-    /// Restore a tree from a JSON mapping and scattered archives
+    /// Restore a tree from a JSON mapping
+    #[command(name = "re", visible_alias = "restore")]
     Restore {
-        #[arg(short, long)]
-        mapping: PathBuf,
+        /// Mapping JSON (or global `-o` if omitted)
+        #[arg(short = 'm', long)]
+        mapping: Option<PathBuf>,
 
-        #[arg(short, long)]
+        #[arg(short = 'd', long)]
         dest: PathBuf,
 
         #[arg(long)]
         archives_root: Option<PathBuf>,
 
-        /// Verify SHA-256 of restored files against the mapping (default: true)
+        /// Verify SHA-256 of restored files (default: true)
         #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
         verify: bool,
     },
 
-    /// Verify packed archives against a mapping (no restore to a user path)
+    /// Verify packed archives against a mapping
+    #[command(name = "ve", visible_alias = "verify")]
     Verify {
-        #[arg(short, long)]
-        mapping: PathBuf,
+        /// Mapping JSON (or global `-o` if omitted)
+        #[arg(short = 'm', long)]
+        mapping: Option<PathBuf>,
 
         /// Root for archive_relpath (default: mapping file's directory)
         #[arg(long)]
@@ -290,4 +339,3 @@ pub enum Commands {
         progress: bool,
     },
 }
-

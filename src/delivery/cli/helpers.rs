@@ -2,7 +2,8 @@
 
 use crate::core::application::PackFailure;
 use crate::core::domain::{
-    effective_budget, parse_size, ArchiveError, ArchiveFormat, ConnectionKind, MediaKind,
+    effective_budget, parse_size, parse_size_with_preset, ArchiveError, ArchiveFormat,
+    ConnectionKind, MediaKind,
 };
 use super::args::CliConnection;
 use super::args::CliMedia;
@@ -47,7 +48,8 @@ pub(crate) fn resolve_pack_budget(
             let conn = connection
                 .map(ConnectionKind::from)
                 .unwrap_or(ConnectionKind::Local);
-            let bytes = parse_size(&s)?;
+            // Accept 10M / 4G and presets: c2, fat32, flash, max
+            let (bytes, _preset) = parse_size_with_preset(&s)?;
             Ok(Some(effective_budget(MediaKind::Custom(bytes), conn)))
         }
         (None, Some(m), _) => {

@@ -27,10 +27,10 @@
 
 cd /path/to/archiver
 ./scripts/install.sh
-# → 既定: ~/.local/bin/archiver（sudo 不要）
+# → 既定: ~/.local/bin/ax（+ archiver → ax のシンボリックリンク）
 
 export PATH="$HOME/.local/bin:$PATH"
-archiver --version
+ax --version
 ```
 
 | 方法 | コマンド |
@@ -44,7 +44,8 @@ archiver --version
 ```bash
 # 手動でも可
 cargo build --release
-install -m 755 target/release/archiver ~/.local/bin/archiver
+install -m 755 target/release/ax ~/.local/bin/ax
+ln -sf ax ~/.local/bin/archiver
 ```
 
 **Windows は公式サポート対象外**です（自己責任でソースビルドは可能な場合があります）。
@@ -134,7 +135,7 @@ install -m 755 target/release/archiver ~/.local/bin/archiver
 cargo build --release
 ```
 
-バイナリ: `target/release/archiver`
+バイナリ: `target/release/ax`（既定）。互換名は `ln -s ax archiver` または `--features compat-bin`
 
 ```bash
 # 動作確認
@@ -290,14 +291,37 @@ archiver --help
 
 ## コマンド一覧
 
-| コマンド | 説明 |
-|----------|------|
-| `estimate -p <path> [options]` | 高速転送向けユニットサイズの見積 |
-| `pack -s <dir> -o <dir> (--auto-size \| --target-size \| --media) [options]` | 分割 pack + JSON マッピング |
-| `restore -m <map.json> -d <dir> [options]` | マッピングから復元 |
-| `verify -m <map.json> [options]` | 復元せずマッピングとアーカイブの整合を検証 |
-| `create -o <path> [-f] <入力...>` | 単一アーカイブ作成 |
-| `list [-f] <archive>` | メンバー一覧 |
+**デフォルトバイナリは `ax`**（`cargo build` / `cargo run` / `cargo install`）。  
+パッケージ名は `archiver` のまま。互換名 `archiver` は `ln -s ax archiver` か `--features compat-bin`。  
+2 文字サブコマンド＋長いエイリアス。グローバル: `-c` 設定 / `-s` 予算 / `-o` 出力。
+
+```bash
+ax --help
+ax pa --help
+```
+
+| 短縮 | エイリアス | 説明 |
+|------|------------|------|
+| `es` | `estimate -p <path> …` | 高速転送向けユニットサイズの見積 |
+| `pa` | `pack -i <dir> -o <dir> (-s SIZE \| --auto-size \| --media) …` | 分割 pack + JSON マッピング（ソースは `-i`） |
+| `re` | `restore -m <map.json> -d <dir> …` | マッピングから復元 |
+| `ve` | `verify -m <map.json> …` | 復元せずマッピングとアーカイブの整合を検証 |
+| `cr` | `create` + グローバル `-o` | 単一アーカイブ作成 |
+| `ls` | `list [-f] <archive>` | メンバー一覧 |
+| `ex` | `extract -d <dir> [-f] <archive>` | 単一アーカイブ展開 |
+
+例: `ax pa -i ./data -o ./out -s 4G -f tar.zst`
+
+**サイズプリセット**（`-s` / `target_size`）:
+
+| キーワード | 予算 | 用途 |
+|------------|------|------|
+| `c2` | 10 MiB | 低帯域・細切れ resume（`low-net` も可） |
+| `fat32` | 3.8 GiB | FAT32 の 4GB 制限回避 |
+| `flash` | 1 GiB | USB メモリ等のバランス |
+| `max` | 実質分割なし（16 TiB） | 高速ローカル / 単一アーカイブ志向 |
+
+数値指定（`10M`, `4G`）も従来どおり可。
 | `extract -d <dir> [-f] <archive>` | 単一アーカイブ展開 |
 
 ### pack の主なオプション

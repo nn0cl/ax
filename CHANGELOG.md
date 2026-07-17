@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Size presets for `-s` / `--size` / `target_size`: `c2` (10MiB; alias `low-net`),
+  `fat32` (3.8GiB), `flash` (1GiB), `max` (practically no split)
+
+### Changed
+
+- CLI binary primary name **`ax`** (compat binary `archiver` still built)
+- Short subcommands: `cr` `ex` `ls` `es` `pa` `re` `ve` (long aliases retained)
+- Globals: `-c` config, `-s`/`--size` budget, `-o`/`--output` path
+- Pack source short flag is **`-i`/`--source`** (`-s` is global size)
+
+### Added
+
 - Optional pack integrity: `--verify-stage` / config `verify_stage=true`
   - Pre-transfer: extract staged archive and re-check member SHA-256
   - Post-transfer: dest archive SHA-256 must equal stage archive SHA-256

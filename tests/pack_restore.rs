@@ -7,7 +7,7 @@ use std::path::Path;
 use tempfile::tempdir;
 
 fn archiver() -> Command {
-    Command::cargo_bin("archiver").unwrap()
+    Command::cargo_bin("ax").unwrap()
 }
 
 fn write_file(path: &Path, contents: &[u8]) {
@@ -25,16 +25,17 @@ fn pack_one_folder_one_archive_when_fits() {
     write_file(&source.join("docs/b.txt"), b"bbb");
 
     let output = dir.path().join("out");
+    // Short form: ax pa -i … -o … -s …
     archiver()
         .args([
-            "pack",
-            "--source",
+            "pa",
+            "-i",
             source.to_str().unwrap(),
-            "--output",
+            "-o",
             output.to_str().unwrap(),
-            "--target-size",
+            "-s",
             "1M",
-            "--format",
+            "-f",
             "zip",
         ])
         .assert()
@@ -377,6 +378,52 @@ fn pack_tar_zst_round_trip() {
         .success();
 
     assert_eq!(fs::read_to_string(dest.join("a.txt")).unwrap(), "zstd-me");
+}
+
+#[test]
+fn pack_size_preset_flash_and_c2() {
+    let dir = tempdir().unwrap();
+    let source = dir.path().join("src");
+    write_file(&source.join("a.txt"), &[1u8; 100]);
+    let out_flash = dir.path().join("out-flash");
+    archiver()
+        .args([
+            "pa",
+            "-i",
+            source.to_str().unwrap(),
+            "-o",
+            out_flash.to_str().unwrap(),
+            "-s",
+            "flash",
+            "-f",
+            "zip",
+            "--dry-run",
+            "--progress",
+            "false",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("budget="));
+
+    let out_c2 = dir.path().join("out-c2");
+    // 100 bytes << 10MiB c2 → single unit
+    archiver()
+        .args([
+            "pa",
+            "-i",
+            source.to_str().unwrap(),
+            "-o",
+            out_c2.to_str().unwrap(),
+            "-s",
+            "c2",
+            "-f",
+            "zip",
+            "--jobs",
+            "1",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 archive"));
 }
 
 #[test]

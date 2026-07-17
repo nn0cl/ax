@@ -79,30 +79,32 @@ detect_repo() {
 
 install_file() {
   local src="$1"
-  local dest="$BIN_DIR/archiver"
+  local dest="$BIN_DIR/ax"
+  local compat="$BIN_DIR/archiver"
   mkdir -p "$BIN_DIR"
   if [[ -w "$BIN_DIR" ]]; then
     install -m 755 "$src" "$dest"
+    ln -sfn ax "$compat"
   else
     echo "note: $BIN_DIR not writable; trying sudo"
     sudo install -m 755 "$src" "$dest"
+    sudo ln -sfn ax "$compat"
   fi
-  echo "installed: $dest"
+  echo "installed: $dest (+ $compat -> ax)"
   "$dest" --version || true
 }
 
 do_uninstall() {
-  local dest="$BIN_DIR/archiver"
-  if [[ -f "$dest" ]]; then
-    if [[ -w "$BIN_DIR" ]]; then
-      rm -f "$dest"
-    else
-      sudo rm -f "$dest"
+  for dest in "$BIN_DIR/ax" "$BIN_DIR/archiver"; do
+    if [[ -e "$dest" || -L "$dest" ]]; then
+      if [[ -w "$BIN_DIR" ]]; then
+        rm -f "$dest"
+      else
+        sudo rm -f "$dest"
+      fi
+      echo "removed: $dest"
     fi
-    echo "removed: $dest"
-  else
-    echo "not found: $dest"
-  fi
+  done
   if command -v cargo >/dev/null 2>&1; then
     if cargo uninstall archiver 2>/dev/null; then
       echo "cargo uninstall archiver: ok"
@@ -124,10 +126,10 @@ case "$MODE" in
     echo "==> cargo build --${PROFILE}"
     if [[ "$PROFILE" == "release" ]]; then
       cargo build --release
-      SRC="$ROOT/target/release/archiver"
+      SRC="$ROOT/target/release/ax"
     else
       cargo build
-      SRC="$ROOT/target/debug/archiver"
+      SRC="$ROOT/target/debug/ax"
     fi
     test -f "$SRC"
     install_file "$SRC"
@@ -135,14 +137,21 @@ case "$MODE" in
 
   cargo-install)
     need_cmd cargo
-    echo "==> cargo install --path . --force --root $PREFIX"
+    echo "==> cargo install --path . --force --root $PREFIX (default bin: ax)"
     cargo install --path . --force --root "$PREFIX" --locked 2>/dev/null \
       || cargo install --path . --force --root "$PREFIX"
-    echo "installed via cargo to $BIN_DIR/archiver (if root layout matches)"
-    if [[ -x "$BIN_DIR/archiver" ]]; then
-      "$BIN_DIR/archiver" --version || true
-    elif [[ -x "$PREFIX/bin/archiver" ]]; then
-      "$PREFIX/bin/archiver" --version || true
+    # Ensure compat name points at ax when cargo only installed ax
+    if [[ -x "$BIN_DIR/ax" && ! -e "$BIN_DIR/archiver" ]]; then
+      ln -sfn ax "$BIN_DIR/archiver" 2>/dev/null || true
+    fi
+    if [[ -x "$PREFIX/bin/ax" && ! -e "$PREFIX/bin/archiver" ]]; then
+      ln -sfn ax "$PREFIX/bin/archiver" 2>/dev/null || true
+    fi
+    echo "installed via cargo (default: ax)"
+    if [[ -x "$BIN_DIR/ax" ]]; then
+      "$BIN_DIR/ax" --version || true
+    elif [[ -x "$PREFIX/bin/ax" ]]; then
+      "$PREFIX/bin/ax" --version || true
     fi
     ;;
 

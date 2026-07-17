@@ -4,15 +4,30 @@ version = "0.0.1"
 edition = "2021"
 # Minimum Supported Rust Version (raise if CI/tooling requires)
 rust-version = "1.74"
-description = "Media-fit local-first pack/restore archiver (USB / optical unit sizing)"
+description = "Local-first media-fit archiver (ax CLI with short subcommands)"
 authors = ["nn0cl <nn0cl@dstechnology.co.jp>"]
 license = "LicenseRef-AllRightsReserved"
 readme = "README.md"
 # Copyright (c) nn0cl@dstechnology.co.jp. All rights reserved.
+# `cargo run` / default binary target name
+default-run = "ax"
 
+# Default binary (built by `cargo build` without extra features)
+[[bin]]
+name = "ax"
+path = "src/main.rs"
+
+# Optional compat name: cargo build --features compat-bin
+# Prefer installing `ax` and `ln -s ax archiver` instead.
 [[bin]]
 name = "archiver"
 path = "src/main.rs"
+required-features = ["compat-bin"]
+
+[features]
+default = []
+# Build a second binary named `archiver` (same as ax). Off by default.
+compat-bin = []
 
 [dependencies]
 # SemVer ranges in Cargo.toml; exact resolved versions are in Cargo.lock

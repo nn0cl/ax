@@ -7,7 +7,8 @@ use std::path::Path;
 use tempfile::tempdir;
 
 fn archiver() -> Command {
-    Command::cargo_bin("archiver").unwrap()
+    // Primary binary is `ax`; `archiver` remains a compat alias.
+    Command::cargo_bin("ax").unwrap()
 }
 
 fn write_tree(root: &Path) {

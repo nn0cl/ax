@@ -20,7 +20,10 @@ pub use content_class::{
 pub use error::ArchiveError;
 pub use format::ArchiveFormat;
 pub use mapping::{MappingArchive, MappingManifest, MappingMember, MAPPING_VERSION};
-pub use media::{effective_budget, mapping_reserve, parse_size, ConnectionKind, MediaKind};
+pub use media::{
+    effective_budget, mapping_reserve, parse_size, parse_size_with_preset, ConnectionKind,
+    MediaKind, SizePreset,
+};
 pub use pack_plan::{
     assign_archive_paths, plan_pack, plan_pack_with_progress, PackPlan, PackUnit, SourceFile,
 };

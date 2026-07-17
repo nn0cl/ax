@@ -33,8 +33,8 @@ git status          # clean working tree
 cargo test
 cargo clippy --all-targets -- -D warnings   # if clippy is available
 cargo build --release
-./target/release/archiver --version
-./target/release/archiver --help | head
+./target/release/ax --version
+./target/release/ax --help | head
 ```
 
 ## Steps (manual)

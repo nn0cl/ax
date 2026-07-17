@@ -9,7 +9,7 @@ if you file a release note.
 ## Environment
 
 - [ ] OS: ________________ (macOS / Linux)
-- [ ] archiver version: `archiver --version`
+- [ ] version: `ax --version`
 - [ ] `cargo test` green on this machine (or CI green for the tag)
 
 ## Core path

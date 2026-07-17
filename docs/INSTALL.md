@@ -1,10 +1,12 @@
 # Install (macOS & Linux)
 
-Install **archiver** on macOS or Linux.
+Install **ax** (Archive eXchange / package name `archiver`) on macOS or Linux.
 
 | | |
 |--|--|
-| **Product version** | **v0.0.1** (`Cargo.toml` / `archiver --version`) |
+| **Product version** | **v0.0.1** (`Cargo.toml` / `ax --version`) |
+| **Default binary** | **`ax`** (`cargo build` / `cargo install`; `default-run = "ax"`) |
+| **Compat name** | optional `archiver` binary (`--features compat-bin`) or symlink → `ax` |
 | **Disclaimer** | AS IS, no warranty, no SLA — use at your own risk |
 
 ## Dependency versions

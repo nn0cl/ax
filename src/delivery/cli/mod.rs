@@ -18,7 +18,8 @@ use crate::core::application::{
     PackSourceTree, RestoreFromMapping, RestoreRequest, VerifyMapping, VerifyRequest,
 };
 use crate::core::domain::{
-    format_estimate_report_with_meta, parse_size, ArchiveError, ConnectionKind,
+    format_estimate_report_with_meta, parse_size, parse_size_with_preset, ArchiveError,
+    ConnectionKind,
 };
 use crate::core::ports::NullProgress;
 use crate::delivery::progress::SingleLineProgress;
@@ -58,13 +59,14 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
     let fs = LocalFileSystem::new();
     let hasher = Sha256Hasher::new();
     let config_path = cli.config.clone();
+    let global_size = cli.size.clone();
+    let global_output = cli.output.clone();
 
     match cli.command {
-        Commands::Create {
-            output,
-            format,
-            inputs,
-        } => {
+        Commands::Create { format, inputs } => {
+            let output = global_output.ok_or_else(|| {
+                ArchiveError::Mapping("create requires -o/--output <archive path>".into())
+            })?;
             let format = parse_format(format)?;
             let used = CreateArchive::new(&engine, &fs).execute(&output, &inputs, format)?;
             Ok(format!(
@@ -128,7 +130,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
         }
         Commands::Pack {
             source,
-            output,
+            pack_output,
             target_size,
             media,
             auto_size,
@@ -152,6 +154,9 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             compress_only,
             verify_stage,
         } => {
+            // Precedence: pack-local > global -o/-s > config (config applied inside resolve).
+            let output = pack_output.or(global_output.clone());
+            let target_size = target_size.or(global_size.clone());
             let settings = resolve_pack_settings(
                 PackCliArgs {
                     source,
@@ -244,6 +249,15 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                 ));
                 out.estimate.recommended_unit_bytes
             } else {
+                if let Some(ref ts) = target_size {
+                    if let Ok((_, Some(p))) = parse_size_with_preset(ts) {
+                        line_progress.status_message(&format!(
+                            "size_preset={} → {} bytes",
+                            p.as_str(),
+                            crate::core::domain::human_bytes(p.bytes())
+                        ));
+                    }
+                }
                 resolve_pack_budget(target_size, media, auto_size, volumes, connection)?
                     .unwrap_or(0)
             };
@@ -375,6 +389,11 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             archives_root,
             verify,
         } => {
+            let mapping = mapping.or(global_output.clone()).ok_or_else(|| {
+                ArchiveError::Mapping(
+                    "restore requires -m/--mapping or global -o <map.json>".into(),
+                )
+            })?;
             let archives_root = archives_root.unwrap_or_else(|| default_archives_root(&mapping));
             let req = RestoreRequest {
                 mapping_path: mapping,
@@ -395,6 +414,11 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             quick,
             progress,
         } => {
+            let mapping = mapping.or(global_output.clone()).ok_or_else(|| {
+                ArchiveError::Mapping(
+                    "verify requires -m/--mapping or global -o <map.json>".into(),
+                )
+            })?;
             let archives_root =
                 archives_root.unwrap_or_else(|| default_verify_archives_root(&mapping));
             let req = VerifyRequest {

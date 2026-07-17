@@ -1,10 +1,36 @@
-# archiver
+# archiver (`ax`)
 
 [日本語](README.ja.md)
 
 Local-first CLI that **packs** directory trees into media-sized archives (scattered
 by folder hierarchy, with a JSON mapping for restore), and also supports
 single-archive create / list / extract.
+
+**Default binary: `ax`** (Archive eXchange).  
+`cargo build` / `cargo run` / `cargo install` produce **`ax`** by default (not `archiver`).  
+Optional second binary: `cargo build --features compat-bin` → also builds `archiver`.  
+Install script links `archiver` → `ax` for compatibility.
+
+| Short | Alias | Role |
+|-------|--------|------|
+| `cr` | create | single archive |
+| `ex` | extract | extract one archive |
+| `ls` | list | list members |
+| `es` | estimate | unit size estimate |
+| `pa` | pack | media-fit pack |
+| `re` | restore | restore from map |
+| `ve` | verify | verify map/archives |
+
+Globals: `-c` config · `-s` budget size/preset · `-o` output/map path. Pack source: `-i`/`--source`.
+
+**Size presets** (`-s`): `c2`=10MiB · `fat32`=3.8GiB · `flash`=1GiB · `max`=no practical split  
+(or numeric `10M` / `4G`; `low-net` is an alias of `c2`).
+
+```bash
+ax --help          # overview + presets + examples
+ax pa --help       # pack options
+ax -h              # short help
+```
 
 Supported formats: **ZIP**, **TAR**, **TAR.GZ**, **TAR.ZST** (zstd, multi-threaded).
 
@@ -47,9 +73,9 @@ Full guide: **[docs/INSTALL.md](docs/INSTALL.md)**
 ```bash
 # Requires Rust (rustup) + C toolchain
 ./scripts/install.sh
-# → ~/.local/bin/archiver by default
+# → ~/.local/bin/ax (+ archiver → ax symlink)
 export PATH="$HOME/.local/bin:$PATH"
-archiver --version
+ax --version
 ```
 
 | Method | Command |
@@ -62,13 +88,26 @@ archiver --version
 
 ```bash
 cargo build --release
-install -m 755 target/release/archiver ~/.local/bin/archiver
+install -m 755 target/release/ax ~/.local/bin/ax
+ln -sf ax ~/.local/bin/archiver
 ```
 
 ## Build
 
 ```bash
+# Default: builds ax only → target/release/ax
 cargo build --release
+cargo run -- --help          # runs ax (default-run)
+cargo run -- pa --help
+
+# Optional: also build a binary named archiver
+cargo build --release --features compat-bin
+# → target/release/ax and target/release/archiver
+
+# Install into PATH
+cargo install --path . --locked
+# → ~/.cargo/bin/ax
+# ln -s ax ~/.cargo/bin/archiver   # optional alias
 ```
 
 ## Usage
@@ -77,57 +116,50 @@ cargo build --release
 
 ```bash
 # Estimate a fast-transfer unit size for a USB stick
-archiver estimate --path /Volumes/USB --connection usb3
-archiver estimate --path /Volumes/USB --measure
+ax es -p /Volumes/USB --connection usb3
+ax es -p /Volumes/USB --measure
 
-# Pack using that estimate
-archiver pack \
-  --source ./photos \
-  --output /Volumes/USB/backup \
-  --auto-size \
-  --connection usb3 \
-  --format tar.zst \
-  --jobs 4 \
-  -v
+# Pack (short): -i source, -o out, -s budget
+ax pa -i ./photos -o /Volumes/USB/backup --auto-size --connection usb3 -f tar.zst -j 4 -v
 
 # Plan only
-archiver pack -s ./photos -o ./out --auto-size --dry-run
+ax pa -i ./photos -o ./out --auto-size --dry-run
 
 # Explicit size / media preset
-archiver pack -s ./data -o ./out --target-size 700M --format zip
-archiver pack -s ./data -o ./out --media dvd --connection usb3
+ax pa -i ./data -o ./out -s 700M -f zip
+ax pa -i ./data -o ./out --media dvd --connection usb3
 
-# Optional stage integrity (member re-hash + post-transfer archive SHA)
-archiver pack -s ./data -o ./out --target-size 700M --verify-stage --work-dir /tmp/aw
+# Optional stage integrity
+ax pa -i ./data -o ./out -s 700M --verify-stage --work-dir /tmp/aw
 
-# Settings file (.inf / .ini); CLI overrides file — see examples/archiver.inf
-archiver pack --config ./archiver.inf
-archiver --config ./archiver.inf pack --jobs 8 --verify-stage
+# Settings file; CLI overrides — see examples/archiver.inf
+ax -c ./archiver.inf pa
+ax -c ./archiver.inf pa -j 8 --verify-stage
 
 # Restore (SHA-256 verify on by default)
-archiver restore \
-  --mapping /Volumes/USB/backup/archiver-map.json \
-  --dest ./restored
+ax re -m /Volumes/USB/backup/archiver-map.json -d ./restored
+# or: ax -o map.json re -d ./restored
 ```
 
 ### Single archive (low-level)
 
 ```bash
-archiver create -o backup.zip ./src README.md
-archiver list backup.zip
-archiver extract -d ./restored backup.zip
+ax -o backup.zip cr ./src README.md
+ax ls backup.zip
+ax ex -d ./restored backup.zip
 ```
 
 ### Commands
 
 | Command | Description |
 |---------|-------------|
-| `estimate -p <path> [--connection] [--target-secs] [--throughput] [--measure]` | Recommend pack unit size for fast transfer |
-| `pack -s <dir> -o <dir> (--auto-size\|--target-size\|--media) [--verify-stage] [--config] ...` | Media-fit multi-archive pack + JSON map |
-| `restore -m <map.json> -d <dir> [--archives-root] [--verify true\|false]` | Restore original tree (SHA-256 verify default on) |
-| `create -o <path> [-f] <inputs...>` | One archive |
-| `list [-f] <archive>` | List members |
-| `extract -d <dir> [-f] <archive>` | Extract one archive |
+| `es` / `estimate -p <path> …` | Recommend pack unit size for fast transfer |
+| `pa` / `pack -i <dir> -o <dir> (-s SIZE\|--auto-size\|--media) …` | Media-fit multi-archive pack + JSON map |
+| `re` / `restore -m <map.json> -d <dir> …` | Restore original tree |
+| `ve` / `verify -m <map.json> …` | Verify map/archives |
+| `cr` / `create -o <path> [-f] <inputs...>` | One archive |
+| `ls` / `list [-f] <archive>` | List members |
+| `ex` / `extract -d <dir> [-f] <archive>` | Extract one archive |
 
 **Transfer estimate:** `unit ≈ practical_write_throughput(connection) × target_secs`,
 clamped to 4MiB–4GiB and free space.

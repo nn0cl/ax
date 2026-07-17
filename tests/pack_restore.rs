@@ -580,8 +580,7 @@ fn pack_dry_run_writes_nothing() {
         .success()
         .stdout(predicate::str::contains("dry-run"))
         .stdout(predicate::str::contains("size_estimate:"))
-        .stdout(predicate::str::contains("algo_eff="))
-        .stdout(predicate::str::contains("classes="));
+        .stdout(predicate::str::contains("ratio="));
 
     let entries: Vec<_> = fs::read_dir(&output)
         .unwrap()
@@ -707,9 +706,26 @@ fn pack_dry_run_size_estimate_classifies_media() {
         .assert()
         .success()
         .stdout(predicate::str::contains("size_estimate:"))
+        .stdout(predicate::str::contains("ratio="));
+    // Class breakdown only with -v
+    archiver()
+        .args([
+            "pack",
+            "--source",
+            source.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--target-size",
+            "10M",
+            "--format",
+            "tar.zst",
+            "--dry-run",
+            "-vv",
+        ])
+        .assert()
+        .success()
         .stdout(predicate::str::contains("image_lossy"))
-        .stdout(predicate::str::contains("text"))
-        .stdout(predicate::str::contains("algo_eff=1.00"));
+        .stdout(predicate::str::contains("classes="));
 }
 
 /// Config jobs overridden by CLI (ADR 0017).

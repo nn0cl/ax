@@ -20,13 +20,22 @@ pub fn create_zip(output: &Path, inputs: &[PathBuf]) -> Result<(), ArchiveError>
 }
 
 pub fn create_zip_members(output: &Path, members: &[MemberSpec]) -> Result<(), ArchiveError> {
+    create_zip_members_with_progress(output, members, &|_, _| {})
+}
+
+pub fn create_zip_members_with_progress(
+    output: &Path,
+    members: &[MemberSpec],
+    on_member: &dyn Fn(usize, &MemberSpec),
+) -> Result<(), ArchiveError> {
     ensure_parent_dir(output)?;
     let file = File::create(output)?;
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
-    for member in members {
+    for (i, member) in members.iter().enumerate() {
         interrupt::check()?;
+        on_member(i, member);
         zip.start_file(&member.member_name, options)
             .map_err(|e| ArchiveError::Engine(e.to_string()))?;
         let mut src = File::open(&member.source)?;

@@ -50,6 +50,29 @@ pub fn run(cli: Cli) -> ExitCode {
     }
 }
 
+/// High-level pack log lines safe to print (no per-unit spam).
+fn is_pack_summary_line(line: &str) -> bool {
+    line.starts_with("budget=")
+        || line.starts_with("resume:")
+        || line.starts_with("plan_file=")
+        || line.starts_with("work_dir=")
+        || line.starts_with("stage_root=")
+        || line.starts_with("resource:")
+        || line.starts_with("pipeline:")
+        || line.starts_with("mode=")
+        || line.starts_with("volumes=")
+        || line.starts_with("budget_from_volumes:")
+        || line.starts_with("stage_policy:")
+        || line.starts_with("cleaned stage")
+        || line.starts_with("kept stage")
+        || line.starts_with("warning: failed to remove stage")
+        || line.starts_with("summary:")
+        || line.starts_with("bytes:")
+        || line.starts_with("verify_stage=")
+        || line.starts_with("size_estimate:")
+        || line.starts_with("mapping:")
+}
+
 fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
     let engine = CompositeArchiveEngine::new();
     let scanner = LocalFileScanner::new();
@@ -145,6 +168,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             verbose,
             progress,
             jobs,
+            auto_jobs,
             work_dir,
             keep_stage,
             resume,
@@ -175,6 +199,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                     verbose,
                     progress,
                     jobs,
+                    auto_jobs,
                     work_dir,
                     keep_stage,
                     resume,
@@ -196,6 +221,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             let connection = settings.connection;
             let target_secs = settings.target_secs;
             let throughput = settings.throughput;
+            let mut throughput_bps = parse_throughput(throughput)?;
             let measure = settings.measure;
             let format = settings.format;
             let mapping = settings.mapping;
@@ -203,6 +229,8 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             let verbose = settings.verbose;
             let progress = settings.progress;
             let jobs = settings.jobs;
+            let auto_jobs = settings.auto_jobs;
+            let jobs_explicit = settings.jobs_explicit;
             let work_dir = settings.work_dir;
             let keep_stage = settings.keep_stage;
             let resume = settings.resume;
@@ -212,8 +240,10 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             let compress_only = settings.compress_only;
             let verify_stage = settings.verify_stage;
 
+            // Fixed dashboard: total + compress0..N + transfer (in-place redraw).
+            // -vv only affects text logs, not the dashboard layout.
             let line_progress =
-                SingleLineProgress::new(progress && !dry_run, verbose, jobs.max(1));
+                SingleLineProgress::new(progress && !dry_run, verbose >= 2, jobs.max(1));
             let resources = LocalResourceProbe::new();
             if progress && !dry_run && !line_progress.is_enabled() {
                 eprintln!(
@@ -221,38 +251,57 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                      try running without redirect, or check /dev/tty"
                 );
             }
-            if let Some(ref p) = settings.config_path {
-                line_progress.status_message(&format!("config={}", p.display()));
+            // One preflight line (avoid many status_message lines before scan).
+            {
+                let mut pre = format!("pack source={} output={}", source.display(), output.display());
+                if let Some(ref p) = settings.config_path {
+                    pre.push_str(&format!(" config={}", p.display()));
+                }
+                if let Some(ref wd) = work_dir {
+                    pre.push_str(&format!(" work_dir={}", wd.display()));
+                }
+                if compress_only {
+                    pre.push_str(" compress-only");
+                }
+                if verify_stage {
+                    pre.push_str(" verify_stage");
+                }
+                if let Some(n) = volumes {
+                    pre.push_str(&format!(" volumes={n}"));
+                }
+                line_progress.status_message(&pre);
             }
 
             let budget = if auto_size {
-                if measure {
-                    line_progress.status_message(
-                        "measuring write speed on destination (this can take ~1 min)...",
-                    );
+                line_progress.status_message(if measure {
+                    "auto-size: measuring write speed…"
                 } else {
-                    line_progress.status_message("estimating pack unit size...");
-                }
+                    "auto-size: estimating unit size…"
+                });
                 let req = EstimateUnitRequest {
                     path: output.clone(),
                     connection_hint: connection.map(ConnectionKind::from),
-                    throughput_override: parse_throughput(throughput)?,
+                    throughput_override: throughput_bps,
                     target_transfer_secs: target_secs,
                     measure,
                     measure_sample_bytes: 64 * 1024 * 1024,
                 };
                 let out = EstimateTransferUnit::new(&media_probe, &meter).execute(&req)?;
                 line_progress.status_message(&format!(
-                    "budget {} bytes ({})",
+                    "budget {} ({})",
                     out.estimate.recommended_unit_bytes,
                     crate::core::domain::human_bytes(out.estimate.recommended_unit_bytes)
                 ));
+                // Prefer estimate/measure throughput for I/O-aware auto-jobs.
+                if out.estimate.assumed_throughput_bytes_per_sec > 0 {
+                    throughput_bps = Some(out.estimate.assumed_throughput_bytes_per_sec);
+                }
                 out.estimate.recommended_unit_bytes
             } else {
                 if let Some(ref ts) = target_size {
                     if let Ok((_, Some(p))) = parse_size_with_preset(ts) {
                         line_progress.status_message(&format!(
-                            "size_preset={} → {} bytes",
+                            "size_preset={} ({})",
                             p.as_str(),
                             crate::core::domain::human_bytes(p.bytes())
                         ));
@@ -263,40 +312,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             };
 
             let mapping_path = mapping.unwrap_or_else(|| default_mapping_path(&output));
-            line_progress.status_message(&format!(
-                "scanning source {} ...",
-                source.display()
-            ));
-
-            if compress_only {
-                line_progress.status_message(
-                    "mode=compress-only (final pack under --output)",
-                );
-            }
-            if verify_stage {
-                line_progress.status_message(
-                    "verify_stage=on (member re-hash + archive SHA after transfer)",
-                );
-            }
-            if let Some(n) = volumes {
-                line_progress.status_message(&format!("volumes={n} (vol-001/ …)"));
-            }
-            if let Some(ref wd) = work_dir {
-                let how = if compress_only {
-                    "random stage under work-dir → finalize to output"
-                } else {
-                    "random stage under work-dir → copy to output"
-                };
-                let stage_end = if keep_stage {
-                    "keep-stage"
-                } else {
-                    "delete stage always"
-                };
-                line_progress.status_message(&format!(
-                    "work_dir={} ({how}; {stage_end})",
-                    wd.display()
-                ));
-            }
+            line_progress.status_message(&format!("scanning {} …", source.display()));
 
             let req = PackRequest {
                 source,
@@ -307,6 +323,10 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                 dry_run,
                 verbose,
                 jobs,
+                auto_jobs,
+                jobs_explicit,
+                connection: connection.map(ConnectionKind::from),
+                throughput_bps,
                 work_dir,
                 keep_stage,
                 resume,
@@ -332,14 +352,15 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                 }
             };
 
-            // Multi-line plan only for dry-run or explicit verbose (avoid log flood).
+            // Keep stdout short: summary only; unit detail needs -vv.
             if dry_run {
-                for line in &result.messages {
+                for line in result.messages.iter().filter(|l| is_pack_summary_line(l)) {
                     println!("{line}");
                 }
-            } else if verbose {
-                for line in &result.messages {
-                    eprintln!("{line}");
+                if verbose >= 2 {
+                    for line in result.messages.iter().filter(|l| l.starts_with("plan")) {
+                        println!("{line}");
+                    }
                 }
             }
 
@@ -357,24 +378,15 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                     budget,
                     mapping_path.display()
                 );
-                for line in &result.messages {
-                    if line.starts_with("resume:")
-                        || line.starts_with("plan_file=")
-                        || line.starts_with("work_dir=")
-                        || line.starts_with("stage_root=")
-                        || line.starts_with("resource:")
-                        || line.starts_with("pipeline:")
-                        || line.starts_with("mode=")
-                        || line.starts_with("volumes=")
-                        || line.starts_with("budget_from_volumes:")
-                        || line.starts_with("stage_policy:")
-                        || line.starts_with("cleaned stage")
-                        || line.starts_with("kept stage")
-                        || line.starts_with("warning: failed to remove stage")
-                        || line.starts_with("summary:")
-                        || line.starts_with("bytes:")
-                        || line.starts_with("verify_stage=")
-                        || line.starts_with("size_estimate:")
+                for line in result.messages.iter().filter(|l| is_pack_summary_line(l)) {
+                    out.push_str(line);
+                    out.push('\n');
+                }
+                if verbose >= 2 {
+                    for line in result
+                        .messages
+                        .iter()
+                        .filter(|l| l.starts_with("plan") || l.starts_with("transferred"))
                     {
                         out.push_str(line);
                         out.push('\n');

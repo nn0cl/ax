@@ -120,7 +120,10 @@ ax es -p /Volumes/USB --connection usb3
 ax es -p /Volumes/USB --measure
 
 # Pack (short): -i source, -o out, -s budget
-ax pa -i ./photos -o /Volumes/USB/backup --auto-size --connection usb3 -f tar.zst -j 4 -v
+# Live dashboard on a real TTY: total / cmp0..N / trn (ADR 0022/0024)
+ax pa -i ./photos -o /Volumes/USB/backup --auto-size --connection usb3 -f tar.zst -j 4
+# Or auto-tune workers from CPU + plan size (alias --at):
+# ax pa -i ./photos -o /Volumes/USB/backup -s 4G -f zip --at --work-dir /tmp/aw
 
 # Plan only
 ax pa -i ./photos -o ./out --auto-size --dry-run
@@ -164,6 +167,11 @@ ax ex -d ./restored backup.zip
 **Transfer estimate:** `unit ≈ practical_write_throughput(connection) × target_secs`,
 clamped to 4MiB–4GiB and free space.
 
+**Pack progress (TTY):** fixed-height dashboard (`total` + `cmp0..N` + `trn`), UI
+thread only; 80-col design baseline, optional wide layout up to 200 cols; file
+labels are `name·tag` (stable path hash). See ADR 0022 / 0024 and [README.ja.md](README.ja.md)
+for field meanings. No TTY → no dashboard (logs only; `-vv` for detail).
+
 **CI:** `cargo test` + `cargo clippy -D warnings` on Ubuntu (see `.github/workflows/ci.yml`).
 
 Path traversal members are **rejected** on extract.
@@ -174,6 +182,8 @@ Path traversal members are **rejected** on extract.
 - Acceptance matrix: [`docs/specs/media-fit-acceptance.md`](docs/specs/media-fit-acceptance.md)
 - Spec (single): [`docs/specs/archive-cli.md`](docs/specs/archive-cli.md)
 - Architecture: [`docs/architecture/rust-cli-architecture.md`](docs/architecture/rust-cli-architecture.md)
+- Product design book: [`docs/architecture/ax-product-design-book.md`](docs/architecture/ax-product-design-book.md)
+- Progress UI: [ADR 0022](docs/architecture/adr/0022-progress-dashboard-ui-thread.md), [ADR 0024](docs/architecture/adr/0024-cli-screen-geometry.md), [LISS-0011](docs/issues/LISS-0011-progress-dashboard-ui-thread.md)
 - Agent contract: [`AGENTS.md`](AGENTS.md)
 
 ```bash

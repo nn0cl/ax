@@ -340,9 +340,10 @@ ax pa --help
 | `-f, --format` | `zip` / `tar` / `tar.gz` / `tar.zst`（**既定: tar.zst**）。`size_estimate` / 進捗 write ETA は **アルゴリズム効率 × 拡張子ベースのコンテンツ種別**で圧縮後サイズを試算（転送完了後は実測比）。空き容量のハード判定は論理サイズのまま |
 | `--mapping` | マッピング出力パス（既定: `<output>/archiver-map.json`） |
 | `--dry-run` | 計画のみ（アーカイブ・マッピングを書かない） |
-| `-v, --verbose` | 進捗 UI に **圧縮スレッドごとの速度**（`compress0`…）を追加表示（経過/ETA は常時表示） |
-| `--progress` | 進捗をターミナル上で上書き表示（既定: TTY なら true） |
-| `--jobs N` | 並列圧縮ワーカー数（**既定: CPU 数、最大 8**） |
+| `-v` / `-vv` | テキストログの詳細度（ADR 0023）。**ダッシュボードは `-v` と独立**（TTY なら常に worker 行を表示） |
+| `--progress` | 固定行数の進捗ダッシュボードを TTY 上で上書き表示（既定: TTY なら true） |
+| `-j, --jobs N` | 並列圧縮ワーカー数（**既定: CPU 数、最大 8**）。指定時は `--at` より優先 |
+| `--at` / `--auto-jobs` | plan 後に jobs を自動決定: **CPU × 残 unit × ファイル数 × I/O 上限**（`--connection` / `--throughput` と `--work-dir` 有無を考慮。遅い媒体ではスレッドを抑える。既定 max 8 を外し全体上限 32）。`-j` があるときは無効 |
 | `--work-dir <dir>` | ステージ用の**親ディレクトリ**。直下に `archiver-<random>/` を新規作成（既存ファイルには触れない）。**既定では成否に関わらず削除** |
 | `--keep-stage` | デバッグ用にステージを残す（`--work-dir` 必須） |
 | `--resume` | `output/archiver-plan.json` を使い、完了済みユニットを fingerprint でスキップ |
@@ -448,24 +449,37 @@ pack-out/
   archiver-a1b2…/                 ← 今回の作業だけ（既定では必ず消える）
 ```
 
-進捗表示（`/dev/tty` または stderr、同じ数行を上書き・ログは流れない）:
+### 進捗ダッシュボード（TTY）
+
+`/dev/tty`（なければ stderr の TTY）上で **固定行数**を上書き描画します（ADR 0022 / 0024）。  
+高さ = `--jobs` + 2（`total` + `cmp0..N` + `trn`）。ワーカーは TTY を触らず、UI スレッドだけが描画します。
 
 ```text
-total     3/12 units  25.0%  85.2 MiB/s  elapsed 1m23s  ETA 4m12s  [compress] photos/part-0003.tar.zst
-transfer  120.5 MiB written  25.0%  40.1 MiB/s  elapsed 1m23s  ETA 4m12s  photos/part-0003.tar.zst
+total      3/   12   25.0%    85.2M/s  elapsed  1m23s  ETA  4m12s  [compr]
+cmp0      90.1M/s  [compr]  part-0003.zip·a1b2
+cmp1     120.0M/s  [hash ]  report.docx·c3d4
+trn      120.5M   25.0%    40.1M/s  elapsed  1m23s  ETA  4m12s  part-0003.zip·a1b2
 ```
 
-- **elapsed** … 開始からの経過時間
-- **ETA** … **全処理完了の近似** = `max(入力残り, 転送残り)`（unit 個数は使わない）
-  - `in` … 残りソース論理バイト / 入力速度
-  - `xfer` … `(全論理 − 転送済み論理) × 圧縮率 r` / 書き込み速度  
-    `r = 転送済みアーカイブ量 / 転送済み論理`（未転送時は r=1.0）
-- **total … %** … ソース**論理バイト**進捗
-- **transfer … %** … 書き込み進捗 = `書いた量 / 推定総アーカイブ量`（ETA の xfer と同じ r）  
-  ※ unit 本数の比ではない
-- **total** … 入力（論理バイト）の処理速度（ハッシュ〜圧縮）
-- **transfer** … 出力アーカイブの書き込み速度
-- **`-v`** … 上記に加えて `compress0`… 各スレッド速度（別フラグは増やさない）
+広い端末（**≥120 列**、描画上限 **200**）では compress 中に成果物と元ファイルを並べます:
+
+```text
+cmp0      90.1M/s  [compr]  part-0003.zip·a1b2 | photo.jpg·9c1b
+```
+
+| 項目 | 意味 |
+|------|------|
+| `total` | 全体: unit 進捗・論理％・入力速度・**elapsed / ETA**・フェーズ（**パスなし**） |
+| `cmpN` | 圧縮ワーカー N の速度・フェーズ・作業ラベル |
+| `trn` | メディア書き出し量・％・書き込み速度・時計・成果物ラベル |
+| **elapsed** | 開始からの経過（固定幅） |
+| **ETA** | 全処理完了の近似 = `max(入力残り, 転送残り)`（unit 個数ではない） |
+| **total %** | ソース**論理バイト**進捗 |
+| **trn %** | 書いた量 / 推定総アーカイブ量（圧縮率 prior→実測） |
+| **ラベル** | `ファイル名·xxxx`（フルパス由来の **安定 4 桁タグ**。乱数ではない。同名の別パスを区別） |
+| 幅 | 設計下限 **80** 列。&lt;120 は 80 キャップ。≥120 は `min(検出, 200)`。幅が取れない環境は 80 |
+
+テキストログの静音化・`-vv` 詳細は ADR 0023 / LISS-0014。ダッシュボードは **`-v` 無しでも worker 行を表示**します。
 
 ### verify
 

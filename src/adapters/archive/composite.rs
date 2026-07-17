@@ -29,23 +29,35 @@ impl ArchiveEngine for CompositeArchiveEngine {
         }
     }
 
-    fn create_members(
+    fn create_members_with_progress(
         &self,
         format: ArchiveFormat,
         output: &Path,
         members: &[MemberSpec],
+        on_member: &dyn Fn(usize, &MemberSpec),
     ) -> Result<(), ArchiveError> {
         match format {
-            ArchiveFormat::Zip => zip_engine::create_zip_members(output, members),
-            ArchiveFormat::Tar => {
-                tar_engine::create_tar_members(output, members, TarCompression::None)
+            ArchiveFormat::Zip => {
+                zip_engine::create_zip_members_with_progress(output, members, on_member)
             }
-            ArchiveFormat::TarGz => {
-                tar_engine::create_tar_members(output, members, TarCompression::Gzip)
-            }
-            ArchiveFormat::TarZst => {
-                tar_engine::create_tar_members(output, members, TarCompression::Zstd)
-            }
+            ArchiveFormat::Tar => tar_engine::create_tar_members_with_progress(
+                output,
+                members,
+                TarCompression::None,
+                on_member,
+            ),
+            ArchiveFormat::TarGz => tar_engine::create_tar_members_with_progress(
+                output,
+                members,
+                TarCompression::Gzip,
+                on_member,
+            ),
+            ArchiveFormat::TarZst => tar_engine::create_tar_members_with_progress(
+                output,
+                members,
+                TarCompression::Zstd,
+                on_member,
+            ),
         }
     }
 

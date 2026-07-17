@@ -84,9 +84,7 @@ pub struct Cli {
 
 /// Default parallel compress jobs: min(8, available_parallelism).
 pub fn default_jobs() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get().clamp(1, 8))
-        .unwrap_or(1)
+    crate::core::domain::default_compress_jobs()
 }
 
 #[derive(Debug, Copy, Clone, ValueEnum)]
@@ -256,17 +254,24 @@ pub enum Commands {
         #[arg(long, action = clap::ArgAction::SetTrue)]
         dry_run: bool,
 
-        /// Verbose: show per-compress-thread speed lines in the progress UI
-        #[arg(long, short = 'v', action = clap::ArgAction::SetTrue)]
-        verbose: bool,
+        /// Verbosity: `-v` light notes, `-vv` worker lines + per-unit plan/transfer log
+        #[arg(short = 'v', long = "verbose", action = clap::ArgAction::Count)]
+        verbose: u8,
 
         /// Live progress UI (default: on when TTY)
         #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
         progress: Option<bool>,
 
-        /// Parallel compress workers (default: CPU count max 8)
+        /// Parallel compress workers (default: CPU count, max 8). Overrides `--at`.
         #[arg(long, short = 'j')]
         jobs: Option<usize>,
+
+        /// Auto-tune compress workers from CPU, plan size (units/files), and
+        /// I/O class (`--connection` / `--throughput`). Drops default max-8
+        /// (ceiling 32) but caps concurrency on slow media. Alias: `--at`.
+        /// Ignored when `-j` is set.
+        #[arg(long = "auto-jobs", visible_alias = "at", action = clap::ArgAction::SetTrue)]
+        auto_jobs: bool,
 
         /// Base dir for staging (private random subdir)
         #[arg(long)]

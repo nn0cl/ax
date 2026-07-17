@@ -30,6 +30,8 @@ pub struct PipelineParams<'a> {
     pub verify_stage: bool,
     /// Content+algorithm prior ratio for write ETA (until first transfer).
     pub ratio_prior: f64,
+    /// When true, record a short per-unit transfer log line (capped).
+    pub log_transfers: bool,
     pub logical_total: u64,
     pub progress: &'a dyn PackProgress,
 }
@@ -72,6 +74,7 @@ where
         compress_only,
         verify_stage,
         ratio_prior,
+        log_transfers,
         logical_total,
         progress,
     } = params;
@@ -233,16 +236,26 @@ where
                         ratio_prior,
                     );
 
-                    if let Ok(mut buf) = transfer_verbose.lock() {
-                        let verify_note = if staged.stage_sha256.is_some() {
-                            " verify_stage=ok"
-                        } else {
-                            ""
-                        };
-                        buf.push(format!(
-                            "transferred {n}/{units_total} {} ({written} bytes){verify_note}",
-                            staged.archive_relpath
-                        ));
+                    if log_transfers {
+                        if let Ok(mut buf) = transfer_verbose.lock() {
+                            // Cap transfer log flood on large packs.
+                            const XFER_LOG_CAP: usize = 30;
+                            if buf.len() < XFER_LOG_CAP {
+                                let verify_note = if staged.stage_sha256.is_some() {
+                                    " verify_stage=ok"
+                                } else {
+                                    ""
+                                };
+                                buf.push(format!(
+                                    "transferred {n}/{units_total} {} ({written} bytes){verify_note}",
+                                    staged.archive_relpath
+                                ));
+                            } else if buf.len() == XFER_LOG_CAP {
+                                buf.push(format!(
+                                    "transferred: … further unit logs omitted (cap {XFER_LOG_CAP})"
+                                ));
+                            }
+                        }
                     }
                 }
                 Ok(())

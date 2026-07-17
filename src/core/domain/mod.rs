@@ -2,6 +2,7 @@ mod config_file;
 mod content_class;
 mod error;
 mod format;
+mod jobs;
 mod mapping;
 mod media;
 mod pack_plan;
@@ -19,6 +20,10 @@ pub use content_class::{
 };
 pub use error::ArchiveError;
 pub use format::ArchiveFormat;
+pub use jobs::{
+    auto_jobs_provisional_cap, available_cpu_threads, connection_label, default_compress_jobs,
+    io_jobs_cap, resolve_compress_jobs, AutoJobsContext, AUTO_JOBS_MAX, DEFAULT_JOBS_MAX,
+};
 pub use mapping::{MappingArchive, MappingManifest, MappingMember, MAPPING_VERSION};
 pub use media::{
     effective_budget, mapping_reserve, parse_size, parse_size_with_preset, ConnectionKind,

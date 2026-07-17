@@ -190,6 +190,7 @@ where
             },
         )?;
         let logical_total: u64 = files.iter().map(|f| f.size).sum();
+        let file_count = files.len();
 
         let budget = if req.budget > 0 {
             req.budget
@@ -234,7 +235,17 @@ where
             req.format,
         );
         let ratio_prior = content_est.ratio;
-        messages.push(content_est.summary_line());
+        if req.verbose >= 2 {
+            messages.push(content_est.summary_line());
+        } else {
+            messages.push(format!(
+                "size_estimate: format={} logical={} archive≈{} ratio={:.3}",
+                req.format.as_str(),
+                crate::core::domain::human_bytes(content_est.logical_bytes),
+                crate::core::domain::human_bytes(content_est.estimated_archive_bytes),
+                content_est.ratio,
+            ));
+        }
         if req.compress_only {
             messages.push(
                 "mode=compress-only (complete pack under --output; no external media assumed)"
@@ -258,18 +269,103 @@ where
                 }
             ));
         }
-        for rec in &plan_file.units {
+        // Per-unit plan lines only with -vv (capped).
+        const PLAN_DETAIL_CAP: usize = 20;
+        if req.verbose >= 2 {
+            let n = plan_file.units.len();
+            for rec in plan_file.units.iter().take(PLAN_DETAIL_CAP) {
+                messages.push(format!(
+                    "plan {} logical={} members={} status={:?} fp={}",
+                    rec.archive_relpath,
+                    rec.logical_bytes,
+                    rec.members.len(),
+                    rec.status,
+                    &rec.fingerprint[..12.min(rec.fingerprint.len())]
+                ));
+            }
+            if n > PLAN_DETAIL_CAP {
+                messages.push(format!(
+                    "plan: … and {} more unit(s) (use -vv; first {PLAN_DETAIL_CAP} only)",
+                    n - PLAN_DETAIL_CAP
+                ));
+            }
+        }
+
+        let root_name = req
+            .source
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "source".to_string());
+
+        let mut prepared: Vec<PreparedUnit> = plan
+            .units
+            .iter()
+            .zip(plan_file.units.iter())
+            .filter(|(_, rec)| rec.status != PlanUnitStatus::Done)
+            .map(|(unit, rec)| {
+                let members: Vec<MemberSpec> = unit
+                    .files
+                    .iter()
+                    .map(|f| MemberSpec {
+                        source: req
+                            .source
+                            .join(f.rel_path.replace('/', std::path::MAIN_SEPARATOR_STR)),
+                        member_name: f.rel_path.clone(),
+                    })
+                    .collect();
+                PreparedUnit {
+                    id: rec.id.clone(),
+                    archive_relpath: rec.archive_relpath.clone(),
+                    unit: unit.clone(),
+                    members,
+                    fingerprint: rec.fingerprint.clone(),
+                }
+            })
+            .collect();
+        prepared.sort_by_key(|p| p.unit.logical_bytes());
+
+        // Auto-tune compress workers after plan (CPU × units/files × I/O class).
+        let cpu = crate::core::domain::available_cpu_threads();
+        let aj = crate::core::domain::AutoJobsContext {
+            cpu,
+            units_pending: prepared.len(),
+            files: file_count,
+            connection: req.connection,
+            throughput_bps: req.throughput_bps,
+            work_dir: req.work_dir.is_some(),
+            compress_only: req.compress_only,
+        };
+        let jobs = crate::core::domain::resolve_compress_jobs(
+            if req.jobs_explicit {
+                Some(req.jobs)
+            } else {
+                None
+            },
+            req.auto_jobs,
+            &aj,
+        );
+        progress.set_jobs(jobs);
+        if req.auto_jobs && !req.jobs_explicit {
+            let io = crate::core::domain::io_jobs_cap(
+                req.connection,
+                req.throughput_bps,
+                req.work_dir.is_some(),
+                req.compress_only,
+            );
+            let conn = crate::core::domain::connection_label(req.connection);
+            let thr = req
+                .throughput_bps
+                .map(|t| crate::core::domain::human_bytes(t))
+                .unwrap_or_else(|| "default".into());
             messages.push(format!(
-                "plan {} logical={} members={} status={:?} fp={}",
-                rec.archive_relpath,
-                rec.logical_bytes,
-                rec.members.len(),
-                rec.status,
-                &rec.fingerprint[..12.min(rec.fingerprint.len())]
+                "auto_jobs: cpu={cpu} units={} files={} io_cap={io} \
+                 ({conn} thr={thr}/s work_dir={}) → jobs={jobs}",
+                prepared.len(),
+                file_count,
+                req.work_dir.is_some(),
             ));
         }
 
-        let jobs = req.jobs.max(1);
         let transfer_queue = transfer_queue_depth(jobs, req.work_dir.is_some());
         if req.check_resources {
             check_resources(
@@ -307,39 +403,6 @@ where
             None
         };
 
-        let root_name = req
-            .source
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "source".to_string());
-
-        let mut prepared: Vec<PreparedUnit> = plan
-            .units
-            .iter()
-            .zip(plan_file.units.iter())
-            .filter(|(_, rec)| rec.status != PlanUnitStatus::Done)
-            .map(|(unit, rec)| {
-                let members: Vec<MemberSpec> = unit
-                    .files
-                    .iter()
-                    .map(|f| MemberSpec {
-                        source: req
-                            .source
-                            .join(f.rel_path.replace('/', std::path::MAIN_SEPARATOR_STR)),
-                        member_name: f.rel_path.clone(),
-                    })
-                    .collect();
-                PreparedUnit {
-                    id: rec.id.clone(),
-                    archive_relpath: rec.archive_relpath.clone(),
-                    unit: unit.clone(),
-                    members,
-                    fingerprint: rec.fingerprint.clone(),
-                }
-            })
-            .collect();
-        prepared.sort_by_key(|p| p.unit.logical_bytes());
-
         let finalize_label = if req.compress_only {
             "local_finalize"
         } else if req.work_dir.is_some() {
@@ -374,6 +437,7 @@ where
                 compress_only: req.compress_only,
                 verify_stage: req.verify_stage,
                 ratio_prior,
+                log_transfers: req.verbose >= 2,
                 logical_total,
                 progress,
             },

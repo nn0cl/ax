@@ -19,6 +19,7 @@ if you file a release note.
 - [ ] `verify` OK after pack; `verify --quick` OK
 - [ ] `pack --config examples/archiver.inf` (with paths filled) or custom `.inf`
 - [ ] CLI overrides config (e.g. `--jobs` / `--verify-stage`)
+- [ ] Optional: `--at --connection usb3` logs `auto_jobs: … io_cap=… → jobs=N`; `-j 2 --at` keeps jobs=2
 
 ## Integrity
 
@@ -29,7 +30,8 @@ if you file a release note.
 
 ## Resources / media (best-effort)
 
-- [ ] Pack to USB or external volume; progress/ETA updates during transfer
+- [ ] Pack to USB or external volume; progress dashboard updates (total / cmp* / trn, elapsed/ETA)
+- [ ] Optional: `stty cols 80` and `stty cols 120` — no row wrap garble; wide shows `archive | source`
 - [ ] Insufficient free space → hard fail unless `--force-resources` (if tested)
 - [ ] `--work-dir` on fast disk + output on slow volume; stage cleaned by default
 

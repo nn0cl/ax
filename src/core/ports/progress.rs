@@ -26,20 +26,31 @@ pub struct ProgressSnapshot {
 pub trait PackProgress: Send + Sync {
     fn report(&self, snap: &ProgressSnapshot);
 
-    /// Per compress-worker update (used with `-v` for thread-level speeds).
+    /// Per compress-worker update.
     /// `logical_delta` is bytes processed in this tick (usually one file size).
+    ///
+    /// `primary` — archive path while packing, or the sole path on hash.
+    /// `source` — input file being processed (same as `primary` on hash; set on
+    /// each compress member so wide terminals can show both). Empty keeps the
+    /// previous source.
     fn report_worker(
         &self,
         worker_id: usize,
         phase: &'static str,
-        current: &str,
+        primary: &str,
+        source: &str,
         logical_delta: u64,
     ) {
-        let _ = (worker_id, phase, current, logical_delta);
+        let _ = (worker_id, phase, primary, source, logical_delta);
     }
 
     /// Finish the display (e.g. emit newline after status block).
     fn finish(&self);
+
+    /// Resize compress worker rows (e.g. after auto-jobs retune). Default: no-op.
+    fn set_jobs(&self, jobs: usize) {
+        let _ = jobs;
+    }
 }
 
 /// No-op reporter.

@@ -47,7 +47,8 @@ cargo build --release
 ## Normative ADRs
 
 - ADR 0022 — dashboard + UI thread  
-- ADR 0023 — text log verbosity (dashboard independent of `-v`)
+- ADR 0023 — text log verbosity (dashboard independent of `-v`)  
+- **ADR 0024 — CLI screen geometry: min design width = 80 (Linux console)**
 
 ## Next
 

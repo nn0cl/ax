@@ -13,7 +13,8 @@
 //! - **Workers never touch the TTY** — they only update shared state.
 //! - **UI thread** wakes every ~200ms, reads state, paints a **fixed-height**
 //!   block (total + compress0..N + transfer) in place.
-//! - **Width**: rows are capped by display columns (CJK = 2) so lines do not wrap.
+//! - **Width**: rows capped at **80 display columns** (Linux console baseline,
+//!   ADR 0024); CJK ≈ 2 columns so lines do not wrap.
 //!
 //! Modules:
 //! - [`rate`] — throughput EMA / worker slots

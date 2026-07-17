@@ -2,11 +2,20 @@
 //!
 //! Japanese / fullwidth glyphs typically occupy **2 columns**. Truncating by
 //! `char` count lets lines wrap and breaks fixed-height cursor math.
+//!
+//! Geometry is normative in **ADR 0024** (Linux console **80-column** baseline).
 
-/// Max columns for one progress row (avoid terminal wrap).
-pub const ROW_COLS: usize = 72;
+/// Minimum / design terminal width: classic Linux console / VT text mode.
+pub const MIN_CONSOLE_COLS: usize = 80;
 
-/// Columns used by a path segment on a dashboard line.
+/// Soft reference for small-screen height (Linux console often 80×24).
+#[allow(dead_code)]
+pub const MIN_CONSOLE_ROWS: usize = 24;
+
+/// Max columns for one progress row (= [`MIN_CONSOLE_COLS`]; must not wrap).
+pub const ROW_COLS: usize = MIN_CONSOLE_COLS;
+
+/// Columns reserved for a path segment on a dashboard line (display cols).
 pub const PATH_COLS: usize = 20;
 
 /// Approximate display width: ASCII = 1, most CJK/fullwidth = 2.

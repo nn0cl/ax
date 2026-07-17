@@ -37,6 +37,7 @@ docs/architecture/design-notes/       ← compact notes per change unit
 | **0021** | **Size presets** |
 | **0022** | **Progress dashboard + UI thread** |
 | **0023** | **Log verbosity `-v`/`-vv`** |
+| **0024** | **CLI screen geometry (80-col Linux console)** |
 
 ## Issue index (recent product)
 
@@ -76,6 +77,7 @@ ax pa -i SRC -o OUT -s PRESET|SIZE -f zip|tar.zst -j N [--work-dir DIR]
 | Pack orchestration | application |
 | Progress **policy** (what to show) | delivery (render pure) |
 | Progress **paint** | delivery/tty |
+| Screen geometry (80 cols) | ADR 0024 + `progress/width.rs` |
 | Zip/tar engines | adapters |
 
 ## Gaps intentionally deferred

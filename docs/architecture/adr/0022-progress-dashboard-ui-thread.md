@@ -31,12 +31,15 @@ Not applicable (stdlib + ANSI only; no TUI crate).
    - UI thread (`ax-progress`): ~200 ms tick → pure render → ANSI paint.
 3. **Paint contract**: fixed row count; rewrite in place (cursor up + clear line).
    Cursor ends **below** the block between frames.
-4. **Display width**: approximate terminal columns (ASCII=1, CJK≈2); cap each
-   row (~72 cols); truncate **paths** aggressively so lines do not wrap.
+4. **Display width**: see **ADR 0024** (Linux console **80-column** baseline;
+   display-width truncation; paths truncated; rows must not wrap).
 5. **Module split** (delivery only): `rate`, `width`, `render`, `tty`, `mod`.
 6. **Disabled** when no TTY (`/dev/tty` or stderr not a terminal): no dashboard.
 7. **Verbose text logs** (`-v` / `-vv`) are separate from dashboard layout
    (ADR 0023).
+
+> **Note:** Early drafts of this ADR mentioned ~72 columns. **Superseded by
+> ADR 0024** (`ROW_COLS` / `MIN_CONSOLE_COLS` = **80**).
 
 ## Consequences
 

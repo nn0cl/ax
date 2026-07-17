@@ -13,7 +13,7 @@
 - Reclassification reason:
 - Owner/agent: grok-build
 - Related branch: `feature/liss-0011-progress-dashboard`
-- ADR: 0022 (dashboard + UI thread), 0023 (log verbosity split)
+- ADR: 0022 (dashboard + UI thread), 0023 (log verbosity), **0024 (80-col screen)**
 - Supersedes/extends: LISS-0008 (progress), LISS-0009 (parallel workers)
 
 ## Summary

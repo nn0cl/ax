@@ -18,6 +18,7 @@ Product/runtime decisions for **archiver** start at **0013**.
 | [0021](0021-environment-size-presets.md) | Size presets | **Accepted** | c2 / fat32 / flash / max (+ numeric) |
 | [0022](0022-progress-dashboard-ui-thread.md) | Progress dashboard + UI thread | **Accepted** | fixed height; workers paint-free; CJK width |
 | [0023](0023-pack-log-verbosity-policy.md) | Pack log verbosity | **Accepted** | quiet default; detail at -vv; dashboard ≠ -v |
+| [0024](0024-cli-screen-geometry.md) | CLI screen geometry | **Accepted** | **80-col** Linux console baseline; row cap; CJK width |
 
 ## How these interact
 
@@ -30,8 +31,9 @@ Extra pack integrity         ──► ADR 0016 (optional)
 Config defaults              ──► ADR 0017
 CLI surface / binary name    ──► ADR 0020
 Named budgets (-s presets)   ──► ADR 0021
-Live progress UI             ──► ADR 0022
+Live progress UI (threads)   ──► ADR 0022
 Text log volume              ──► ADR 0023
+CLI screen width / geometry  ──► ADR 0024  (80×24 Linux console baseline)
 Product promises             ──► ADR 0014 + 0019
 ```
 

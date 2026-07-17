@@ -3,8 +3,8 @@
 ## Metadata
 
 - Local issue ID: LISS-0011
-- GitHub issue: (opened with PR if available)
-- Status: in_progress
+- GitHub issue: https://github.com/nn0cl/ax/pull/4
+- Status: in_review
 - Phase: Phase 3 (refactor) / Fast Path with compact design note
 - Type: feature / refactor
 - Priority: P1

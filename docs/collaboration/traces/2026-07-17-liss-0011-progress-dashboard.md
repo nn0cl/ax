@@ -46,5 +46,6 @@ Fast Path / readability refactor with compact design note
 
 ## Handoff
 
+- PR: https://github.com/nn0cl/ax/pull/4
 - Merge when CI green.
 - Operator: use `target/release/ax` for pack jobs; dashboard needs a real TTY.

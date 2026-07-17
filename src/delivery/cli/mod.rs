@@ -1,3 +1,10 @@
+//! CLI delivery: parse, dispatch, adapters composition.
+
+mod args;
+mod helpers;
+
+pub use args::{Cli, Commands};
+
 use crate::adapters::archive::CompositeArchiveEngine;
 use crate::adapters::fs::{
     LocalFileScanner, LocalFileSystem, LocalMediaProbe, LocalResourceProbe, LocalThroughputMeter,
@@ -10,303 +17,13 @@ use crate::core::application::{
     PackSourceTree, RestoreFromMapping, RestoreRequest, VerifyMapping, VerifyRequest,
 };
 use crate::core::domain::{
-    effective_budget, format_estimate_report_with_meta, parse_size, ArchiveError, ArchiveFormat,
-    ConnectionKind, MediaKind, DEFAULT_TARGET_SECS,
+    format_estimate_report_with_meta, parse_size, ArchiveError, ConnectionKind,
 };
 use crate::core::ports::NullProgress;
 use crate::delivery::progress::SingleLineProgress;
-use clap::{Parser, Subcommand, ValueEnum};
-use std::path::PathBuf;
+use helpers::{handle_pack_failure, parse_format, parse_throughput, resolve_pack_budget};
 use std::process::ExitCode;
 
-#[derive(Debug, Parser)]
-#[command(
-    name = "archiver",
-    version,
-    about = "Media-fit pack/restore with transfer-size estimation"
-)]
-pub struct Cli {
-    #[command(subcommand)]
-    pub command: Commands,
-}
-
-#[derive(Debug, Copy, Clone, ValueEnum)]
-pub enum CliFormat {
-    Zip,
-    Tar,
-    #[value(name = "tar.gz")]
-    TarGz,
-    #[value(name = "tar.zst")]
-    TarZst,
-}
-
-impl From<CliFormat> for ArchiveFormat {
-    fn from(v: CliFormat) -> Self {
-        match v {
-            CliFormat::Zip => ArchiveFormat::Zip,
-            CliFormat::Tar => ArchiveFormat::Tar,
-            CliFormat::TarGz => ArchiveFormat::TarGz,
-            CliFormat::TarZst => ArchiveFormat::TarZst,
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, ValueEnum)]
-pub enum CliMedia {
-    Cd,
-    Dvd,
-    Bd25,
-}
-
-impl From<CliMedia> for MediaKind {
-    fn from(v: CliMedia) -> Self {
-        match v {
-            CliMedia::Cd => MediaKind::Cd,
-            CliMedia::Dvd => MediaKind::Dvd,
-            CliMedia::Bd25 => MediaKind::Bd25,
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, ValueEnum)]
-pub enum CliConnection {
-    Local,
-    Usb2,
-    Usb3,
-    Thunderbolt,
-    Network,
-}
-
-impl From<CliConnection> for ConnectionKind {
-    fn from(v: CliConnection) -> Self {
-        match v {
-            CliConnection::Local => ConnectionKind::Local,
-            CliConnection::Usb2 => ConnectionKind::Usb2,
-            CliConnection::Usb3 => ConnectionKind::Usb3,
-            CliConnection::Thunderbolt => ConnectionKind::Thunderbolt,
-            CliConnection::Network => ConnectionKind::Network,
-        }
-    }
-}
-
-#[derive(Debug, Subcommand)]
-pub enum Commands {
-    /// Create a single archive from files and directories
-    Create {
-        #[arg(short, long)]
-        output: PathBuf,
-        #[arg(short, long)]
-        format: Option<String>,
-        #[arg(required = true)]
-        inputs: Vec<PathBuf>,
-    },
-
-    /// List members of an archive
-    List {
-        archive: PathBuf,
-        #[arg(short, long)]
-        format: Option<String>,
-    },
-
-    /// Extract a single archive into a destination directory
-    Extract {
-        #[arg(short, long)]
-        dest: PathBuf,
-        archive: PathBuf,
-        #[arg(short, long)]
-        format: Option<String>,
-    },
-
-    /// Estimate a fast-transfer pack unit size for a destination volume
-    Estimate {
-        /// Destination path (USB mount, network share, or local directory)
-        #[arg(short, long)]
-        path: PathBuf,
-
-        /// Connection class (default: auto-detect)
-        #[arg(long, value_enum)]
-        connection: Option<CliConnection>,
-
-        /// Target seconds to transfer one archive unit (default: 45)
-        #[arg(long, default_value_t = DEFAULT_TARGET_SECS)]
-        target_secs: u64,
-
-        /// Override assumed write throughput, e.g. 80M (bytes/sec)
-        #[arg(long)]
-        throughput: Option<String>,
-
-        /// Run a short sequential write sample on the destination
-        #[arg(long)]
-        measure: bool,
-
-        /// Sample size for --measure (default: 64M)
-        #[arg(long)]
-        measure_sample: Option<String>,
-    },
-
-    /// Pack a source tree into media-sized archives with a JSON mapping
-    Pack {
-        #[arg(short, long)]
-        source: PathBuf,
-
-        #[arg(short, long)]
-        output: PathBuf,
-
-        #[arg(long, conflicts_with_all = ["media", "auto_size"])]
-        target_size: Option<String>,
-
-        #[arg(long, conflicts_with_all = ["target_size", "auto_size"])]
-        media: Option<CliMedia>,
-
-        /// Derive unit size from destination free space + connection throughput
-        #[arg(long, conflicts_with_all = ["target_size", "media"])]
-        auto_size: bool,
-
-        /// Split pack into up to N volume dirs (`vol-001/` …). Capacity = budget
-        /// (or ceil(total/N) if used alone without --target-size/--media/--auto-size)
-        #[arg(long)]
-        volumes: Option<u32>,
-
-        #[arg(long, value_enum)]
-        connection: Option<CliConnection>,
-
-        #[arg(long, default_value_t = DEFAULT_TARGET_SECS)]
-        target_secs: u64,
-
-        #[arg(long)]
-        throughput: Option<String>,
-
-        /// Measure write throughput when using --auto-size
-        #[arg(long)]
-        measure: bool,
-
-        #[arg(short, long, value_enum, default_value_t = CliFormat::Zip)]
-        format: CliFormat,
-
-        #[arg(long)]
-        mapping: Option<PathBuf>,
-
-        /// Plan only; do not write archives or mapping
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Verbose: show per-compress-thread speed lines in the progress UI
-        #[arg(long, short = 'v')]
-        verbose: bool,
-
-        /// Two-line live speed on stderr: compress + transfer (default: on when TTY)
-        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
-        progress: bool,
-
-        /// Parallel archive workers (default: 1)
-        #[arg(long, default_value_t = 1)]
-        jobs: usize,
-
-        /// Local staging directory: compress here, then copy to --output (e.g. fast SSD)
-        #[arg(long)]
-        work_dir: Option<PathBuf>,
-
-        /// After each archive is copied to --output, delete staged files; remove stage tree at end
-        #[arg(long, requires = "work_dir")]
-        cleanup_work_dir: bool,
-
-        /// Resume from output/archiver-plan.json when present; if missing, start a fresh pack
-        #[arg(long)]
-        resume: bool,
-
-        /// Check free disk on output/work-dir and soft memory before writing (default: true)
-        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
-        check_resources: bool,
-
-        /// Continue even if resource check reports insufficient free space
-        #[arg(long)]
-        force_resources: bool,
-
-        /// Safety multiplier for disk estimates (default 1.0 = need up to remaining logical on output)
-        #[arg(long, default_value_t = 1.0)]
-        resource_safety_factor: f64,
-
-        /// Complete local pack under --output (prefer rename from work-dir; no USB assumption)
-        #[arg(long)]
-        compress_only: bool,
-    },
-
-    /// Restore a tree from a JSON mapping and scattered archives
-    Restore {
-        #[arg(short, long)]
-        mapping: PathBuf,
-
-        #[arg(short, long)]
-        dest: PathBuf,
-
-        #[arg(long)]
-        archives_root: Option<PathBuf>,
-
-        /// Verify SHA-256 of restored files against the mapping (default: true)
-        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
-        verify: bool,
-    },
-
-    /// Verify packed archives against a mapping (no restore to a user path)
-    Verify {
-        #[arg(short, long)]
-        mapping: PathBuf,
-
-        /// Root for archive_relpath (default: mapping file's directory)
-        #[arg(long)]
-        archives_root: Option<PathBuf>,
-
-        /// Presence + member list only (skip extract and SHA-256)
-        #[arg(long)]
-        quick: bool,
-    },
-}
-
-fn parse_format(raw: Option<String>) -> Result<Option<ArchiveFormat>, ArchiveError> {
-    match raw {
-        Some(s) => Ok(Some(ArchiveFormat::parse(&s)?)),
-        None => Ok(None),
-    }
-}
-
-fn parse_throughput(raw: Option<String>) -> Result<Option<u64>, ArchiveError> {
-    match raw {
-        Some(s) => Ok(Some(parse_size(&s)?)),
-        None => Ok(None),
-    }
-}
-
-/// Budget for pack: explicit flags, or 0 when only `--volumes` (filled after scan).
-fn resolve_pack_budget(
-    target_size: Option<String>,
-    media: Option<CliMedia>,
-    auto_size: bool,
-    volumes: Option<u32>,
-    connection: Option<CliConnection>,
-) -> Result<Option<u64>, ArchiveError> {
-    if auto_size {
-        return Ok(None); // caller handles
-    }
-    match (target_size, media, volumes) {
-        (Some(s), None, _) => {
-            let conn = connection
-                .map(ConnectionKind::from)
-                .unwrap_or(ConnectionKind::Local);
-            let bytes = parse_size(&s)?;
-            Ok(Some(effective_budget(MediaKind::Custom(bytes), conn)))
-        }
-        (None, Some(m), _) => {
-            let conn = connection
-                .map(ConnectionKind::from)
-                .unwrap_or(ConnectionKind::Local);
-            Ok(Some(effective_budget(MediaKind::from(m), conn)))
-        }
-        (None, None, Some(_)) => Ok(Some(0)), // pack derives after scan
-        _ => Err(ArchiveError::InvalidBudget),
-    }
-}
-
-/// Run the CLI and return a process exit code.
 pub fn run(cli: Cli) -> ExitCode {
     match run_inner(cli) {
         Ok(msg) => {
@@ -427,7 +144,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             progress,
             jobs,
             work_dir,
-            cleanup_work_dir,
+            keep_stage,
             resume,
             check_resources,
             force_resources,
@@ -491,14 +208,18 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             }
             if let Some(ref wd) = work_dir {
                 let how = if compress_only {
-                    "compress local → finalize to output (prefer rename)"
+                    "random stage under work-dir → finalize to output"
                 } else {
-                    "compress local → copy to output"
+                    "random stage under work-dir → copy to output"
+                };
+                let stage_end = if keep_stage {
+                    "keep-stage"
+                } else {
+                    "delete stage always"
                 };
                 line_progress.status_message(&format!(
-                    "work_dir={} ({how}) cleanup={}",
-                    wd.display(),
-                    cleanup_work_dir
+                    "work_dir={} ({how}; {stage_end})",
+                    wd.display()
                 ));
             }
 
@@ -512,7 +233,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                 verbose,
                 jobs,
                 work_dir,
-                cleanup_work_dir,
+                keep_stage,
                 resume,
                 check_resources,
                 force_resources,
@@ -523,10 +244,16 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
 
             let packer =
                 PackSourceTree::new(&engine, &scanner, &mapping_store, &fs, &hasher, &resources);
-            let result = if line_progress.is_enabled() {
-                packer.execute_with_progress(&req, &line_progress)?
+            let result = match if line_progress.is_enabled() {
+                packer.execute_with_progress(&req, &line_progress)
             } else {
-                packer.execute_with_progress(&req, &NullProgress)?
+                packer.execute_with_progress(&req, &NullProgress)
+            } {
+                Ok(r) => r,
+                Err(fail) => {
+                    handle_pack_failure(fail)?;
+                    unreachable!()
+                }
             };
 
             // Multi-line plan only for dry-run or explicit verbose (avoid log flood).
@@ -564,6 +291,12 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                         || line.starts_with("mode=")
                         || line.starts_with("volumes=")
                         || line.starts_with("budget_from_volumes:")
+                        || line.starts_with("stage_policy:")
+                        || line.starts_with("cleaned stage")
+                        || line.starts_with("kept stage")
+                        || line.starts_with("warning: failed to remove stage")
+                        || line.starts_with("summary:")
+                        || line.starts_with("bytes:")
                     {
                         out.push_str(line);
                         out.push('\n');
@@ -596,6 +329,7 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
             mapping,
             archives_root,
             quick,
+            progress,
         } => {
             let archives_root =
                 archives_root.unwrap_or_else(|| default_verify_archives_root(&mapping));
@@ -604,8 +338,19 @@ fn run_inner(cli: Cli) -> Result<String, ArchiveError> {
                 archives_root,
                 quick,
             };
-            let report =
-                VerifyMapping::new(&engine, &mapping_store, &fs, &hasher).execute(&req)?;
+            let line_progress = SingleLineProgress::new(progress, false, 1);
+            if progress && !line_progress.is_enabled() {
+                eprintln!(
+                    "warning: progress UI disabled (no controlling terminal); \
+                     try running without redirect, or check /dev/tty"
+                );
+            }
+            let report = if line_progress.is_enabled() {
+                VerifyMapping::new(&engine, &mapping_store, &fs, &hasher)
+                    .execute_with_progress(&req, &line_progress)?
+            } else {
+                VerifyMapping::new(&engine, &mapping_store, &fs, &hasher).execute(&req)?
+            };
             for line in &report.messages {
                 eprintln!("{line}");
             }

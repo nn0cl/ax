@@ -54,7 +54,7 @@ pub struct PackPlan {
     pub empty_directories: Vec<String>,
 }
 
-/// Immediate files of one directory — never split across archives.
+/// Immediate files of one parent directory (may be split if over budget).
 #[derive(Debug, Clone)]
 struct FolderBundle {
     dir: String,
@@ -67,13 +67,13 @@ pub type PlanProgressFn<'a> = dyn Fn(usize, usize, usize) + 'a;
 
 /// Build a pack plan from scanned files and empty directories.
 ///
-/// Rules (Adjudicator 2026-07-17, revised):
-/// - Files that share the same parent directory always stay in the same archive
-///   (no intra-folder split / 生き別れ).
+/// Rules:
 /// - Multiple folders may be merged into one archive while under `budget`
 ///   (logical size; compressed archives are usually smaller).
-/// - A single folder larger than `budget` still becomes one archive alone.
-/// - A single file larger than `budget` is not byte-split (stays with its folder).
+/// - A folder **over** `budget` is split by whole files (greedy) so each unit
+///   stays ≤ budget when possible.
+/// - A **single file** larger than `budget` is never byte-split (one unit alone).
+/// - Under-budget folders are not split (siblings stay together when they fit).
 pub fn plan_pack(
     files: Vec<SourceFile>,
     empty_directories: Vec<String>,
@@ -92,7 +92,7 @@ pub fn plan_pack_with_progress(
     let budget = budget.max(1);
     files.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
 
-    // Group by parent directory → atomic folder bundles (DFS path order).
+    // Group by parent directory (path order).
     let mut bundles: Vec<FolderBundle> = Vec::new();
     for f in files {
         let dir = f.parent_dir().to_string();
@@ -136,14 +136,10 @@ pub fn plan_pack_with_progress(
     };
 
     for (i, bundle) in bundles.into_iter().enumerate() {
-        // Folder larger than budget: never split; emit alone after flushing.
         if bundle.size > budget {
+            // Over budget: flush merge queue, then split this folder by whole files.
             flush(&mut current, &mut current_size, &mut units);
-            let placement_dir = bundle.dir.clone();
-            units.push(PackUnit {
-                placement_dir,
-                files: bundle.files,
-            });
+            emit_split_folder_units(bundle, budget, &mut units);
         } else if !current.is_empty() && current_size.saturating_add(bundle.size) > budget {
             flush(&mut current, &mut current_size, &mut units);
             current_size = bundle.size;
@@ -168,6 +164,48 @@ pub fn plan_pack_with_progress(
         units,
         empty_directories,
     }
+}
+
+/// Split one over-budget directory into whole-file units (no byte-split of a file).
+fn emit_split_folder_units(bundle: FolderBundle, budget: u64, units: &mut Vec<PackUnit>) {
+    let mut files = bundle.files;
+    files.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
+    let dir = bundle.dir;
+
+    let mut batch: Vec<SourceFile> = Vec::new();
+    let mut batch_size: u64 = 0;
+
+    let flush_batch = |batch: &mut Vec<SourceFile>,
+                       batch_size: &mut u64,
+                       dir: &str,
+                       units: &mut Vec<PackUnit>| {
+        if batch.is_empty() {
+            return;
+        }
+        units.push(PackUnit {
+            placement_dir: dir.to_string(),
+            files: std::mem::take(batch),
+        });
+        *batch_size = 0;
+    };
+
+    for f in files {
+        if f.size > budget {
+            flush_batch(&mut batch, &mut batch_size, &dir, units);
+            units.push(PackUnit {
+                placement_dir: dir.clone(),
+                files: vec![f],
+            });
+        } else if !batch.is_empty() && batch_size.saturating_add(f.size) > budget {
+            flush_batch(&mut batch, &mut batch_size, &dir, units);
+            batch_size = f.size;
+            batch.push(f);
+        } else {
+            batch_size = batch_size.saturating_add(f.size);
+            batch.push(f);
+        }
+    }
+    flush_batch(&mut batch, &mut batch_size, &dir, units);
 }
 
 /// Longest common parent path of directory relative paths (`/` separated).
@@ -252,8 +290,8 @@ mod tests {
     }
 
     #[test]
-    fn folder_never_split_even_when_over_budget() {
-        // Same folder, total 1200 > budget 1000 → still ONE unit (no extension split).
+    fn folder_over_budget_splits_by_whole_files() {
+        // Same folder, total 1200 > budget 1000 → 800 + 400 (no byte-split).
         let plan = plan_pack(
             vec![
                 f("photos/a.jpg", 400),
@@ -263,12 +301,13 @@ mod tests {
             vec![],
             1000,
         );
-        assert_eq!(plan.units.len(), 1);
-        assert_eq!(plan.units[0].files.len(), 3);
-        assert!(plan.units[0]
-            .files
+        assert_eq!(plan.units.len(), 2);
+        assert_eq!(plan.units[0].files.len(), 2);
+        assert_eq!(plan.units[1].files.len(), 1);
+        assert!(plan
+            .units
             .iter()
-            .all(|x| x.parent_dir() == "photos"));
+            .all(|u| u.files.iter().all(|x| x.parent_dir() == "photos")));
     }
 
     #[test]
@@ -321,15 +360,18 @@ mod tests {
     }
 
     #[test]
-    fn huge_file_folder_stays_with_siblings_in_same_dir() {
+    fn huge_file_alone_small_sibling_separate() {
         let plan = plan_pack(
             vec![f("big/video.mkv", 5000), f("big/note.txt", 10)],
             vec![],
             1000,
         );
-        // Same folder → one unit even if over budget
-        assert_eq!(plan.units.len(), 1);
-        assert_eq!(plan.units[0].files.len(), 2);
+        // File > budget is never byte-split; small sibling is its own unit.
+        // Path order: note.txt first (fits alone), then video.mkv alone (over budget).
+        assert_eq!(plan.units.len(), 2);
+        assert_eq!(plan.units[0].files[0].rel_path, "big/note.txt");
+        assert_eq!(plan.units[1].files[0].rel_path, "big/video.mkv");
+        assert_eq!(plan.units[1].files.len(), 1);
     }
 
     #[test]

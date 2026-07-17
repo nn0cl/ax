@@ -1,5 +1,6 @@
 use crate::adapters::fs::{collect_pack_entries, ensure_parent_dir};
 use crate::core::domain::{safe_join, ArchiveError, ArchiveMember, MemberSpec};
+use crate::core::interrupt;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -63,6 +64,7 @@ pub fn create_tar_members(
 fn write_tar<W: Write>(writer: W, members: &[MemberSpec]) -> Result<(), ArchiveError> {
     let mut builder = Builder::new(writer);
     for member in members {
+        interrupt::check()?;
         builder
             .append_path_with_name(&member.source, &member.member_name)
             .map_err(|e| ArchiveError::Engine(e.to_string()))?;
@@ -145,6 +147,7 @@ fn unpack_tar<R: Read>(mut archive: Archive<R>, dest: &Path) -> Result<(), Archi
         .entries()
         .map_err(|e| ArchiveError::Engine(e.to_string()))?
     {
+        interrupt::check()?;
         let mut entry = entry.map_err(|e| ArchiveError::Engine(e.to_string()))?;
         let raw = entry
             .path()

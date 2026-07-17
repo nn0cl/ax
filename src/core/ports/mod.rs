@@ -76,6 +76,20 @@ pub trait FileSystem: Sync {
     fn create_dir_all(&self, path: &Path) -> Result<(), ArchiveError>;
     fn file_len(&self, path: &Path) -> Result<u64, ArchiveError>;
     fn copy_file(&self, from: &Path, to: &Path) -> Result<u64, ArchiveError>;
+
+    /// Copy with progress: `on_progress(bytes_copied_so_far, total_bytes)`.
+    /// Default calls [`copy_file`] once and reports completion only.
+    fn copy_file_with_progress(
+        &self,
+        from: &Path,
+        to: &Path,
+        on_progress: &dyn Fn(u64, u64),
+    ) -> Result<u64, ArchiveError> {
+        let n = self.copy_file(from, to)?;
+        on_progress(n, n);
+        Ok(n)
+    }
+
     fn remove_file(&self, path: &Path) -> Result<(), ArchiveError>;
     fn remove_dir_all(&self, path: &Path) -> Result<(), ArchiveError>;
     fn rename(&self, from: &Path, to: &Path) -> Result<(), ArchiveError>;

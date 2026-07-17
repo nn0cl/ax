@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: archiver-linux-x86_64
+          - os: macos-latest
+            artifact: archiver-macos-universal
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo test
+        run: cargo test
+
+      - name: cargo build --release
+        run: cargo build --release
+
+      - name: Package binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="target/release/archiver"
+          test -f "$bin"
+          cp "$bin" "${{ matrix.artifact }}"
+          chmod +x "${{ matrix.artifact }}"
+          "./${{ matrix.artifact }}" --version
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  publish:
+    name: GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find dist -type f -exec cp {} release/ \;
+          ls -la release
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release/*
+          body: |
+            ## archiver ${{ github.ref_name }}
+
+            **No warranty.** Automated tests are run in CI; use at your own risk.
+            See README and CHANGELOG.md.
+
+            Copyright (c) nn0cl@dstechnology.co.jp. All rights reserved.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -133,10 +133,10 @@ fn verify_fails_when_archive_missing() {
 }
 
 #[test]
-fn pack_keeps_one_folder_together_when_over_budget() {
+fn pack_splits_same_folder_when_over_budget() {
     let dir = tempdir().unwrap();
     let source = dir.path().join("src");
-    // Same folder, total 1200 > budget 1000 → still one archive (no 生き別れ)
+    // Same folder, total 1200 > budget 1000 → whole-file split → 2 archives
     write_file(&source.join("photos/a.jpg"), &vec![1u8; 400]);
     write_file(&source.join("photos/b.jpg"), &vec![2u8; 400]);
     write_file(&source.join("photos/c.png"), &vec![3u8; 400]);
@@ -156,10 +156,10 @@ fn pack_keeps_one_folder_together_when_over_budget() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("1 archive"));
+        .stdout(predicate::str::contains("2 archive"));
 
     assert!(output.join("photos/part-0001.zip").exists());
-    assert!(!output.join("photos/part-0002.zip").exists());
+    assert!(output.join("photos/part-0002.zip").exists());
 }
 
 #[test]
@@ -712,6 +712,9 @@ fn pack_work_dir_then_cleanup() {
     write_file(&source.join("a/x.txt"), b"hello-work-dir");
     let output = dir.path().join("out");
     let work = dir.path().join("work");
+    // work-dir need not exist yet (pack creates it); also leave a sibling after create
+    fs::create_dir_all(&work).unwrap();
+    write_file(&work.join("keep-me.txt"), b"do-not-delete");
 
     archiver()
         .args([
@@ -726,36 +729,31 @@ fn pack_work_dir_then_cleanup() {
             "zip",
             "--work-dir",
             work.to_str().unwrap(),
-            "--cleanup-work-dir",
         ])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::str::contains("cleaned stage"));
 
     assert!(output.join("archiver-map.json").exists());
-    // Final archive must exist on output
-    let has_archive = fs::read_dir(&output)
+    assert_eq!(
+        fs::read_to_string(work.join("keep-me.txt")).unwrap(),
+        "do-not-delete"
+    );
+
+    // No archiver-* stage dirs left under work after success
+    let left_stages: Vec<_> = fs::read_dir(&work)
         .unwrap()
         .filter_map(|e| e.ok())
-        .any(|e| {
-            e.path()
-                .extension()
-                .map(|x| x == "zip")
-                .unwrap_or(false)
-                || e.file_type().map(|t| t.is_dir()).unwrap_or(false)
-        });
-    assert!(has_archive || output.join("part-0001.zip").exists() || output.join("a").exists());
-
-    // Stage tree under work/.archiver-work should be gone after cleanup
-    let stage_base = work.join(".archiver-work");
-    if stage_base.exists() {
-        let left: Vec<_> = fs::read_dir(&stage_base)
-            .map(|rd| rd.filter_map(|e| e.ok()).collect())
-            .unwrap_or_default();
-        assert!(
-            left.is_empty(),
-            "stage dirs should be removed: {left:?}"
-        );
-    }
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("archiver-")
+        })
+        .collect();
+    assert!(
+        left_stages.is_empty(),
+        "stage dirs should be removed: {left_stages:?}"
+    );
 
     let dest = dir.path().join("restored");
     archiver()

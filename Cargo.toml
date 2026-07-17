@@ -1,16 +1,22 @@
 [package]
 name = "archiver"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
-description = "Local-first CLI utility that creates, lists, and extracts file archives"
-license = "MIT"
+# Minimum Supported Rust Version (raise if CI/tooling requires)
+rust-version = "1.74"
+description = "Media-fit local-first pack/restore archiver (USB / optical unit sizing)"
+authors = ["nn0cl <nn0cl@dstechnology.co.jp>"]
+license = "LicenseRef-AllRightsReserved"
 readme = "README.md"
+# Copyright (c) nn0cl@dstechnology.co.jp. All rights reserved.
 
 [[bin]]
 name = "archiver"
 path = "src/main.rs"
 
 [dependencies]
+# SemVer ranges in Cargo.toml; exact resolved versions are in Cargo.lock
+# (see docs/INSTALL.md § Dependency versions).
 clap = { version = "4.5", features = ["derive"] }
 thiserror = "2.0"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }

@@ -1,0 +1,30 @@
+# Example Homebrew formula for a private tap (not published to homebrew-core).
+#
+# Usage (after you host a tap repo homebrew-archiver):
+#   brew tap yourname/archiver
+#   brew install archiver
+#
+# Or install from a local path during development:
+#   brew install --build-from-source ./scripts/homebrew/archiver.rb
+#   (rename this file to archiver.rb and fill url/sha256)
+#
+# class Archiver < Formula
+#   desc "Media-fit local-first pack/restore archiver"
+#   homepage "https://github.com/OWNER/archiver"
+#   url "https://github.com/OWNER/archiver/archive/refs/tags/v0.0.1.tar.gz"
+#   sha256 "REPLACE_ME"
+#   license :cannot_represent # All rights reserved
+#
+#   depends_on "rust" => :build
+#
+#   def install
+#     system "cargo", "install", *std_cargo_args
+#   end
+#
+#   test do
+#     assert_match version.to_s, shell_output("#{bin}/archiver --version")
+#   end
+# end
+
+# Placeholder so the example file is never executed as a Formula by mistake.
+puts "This is an example only. Copy and edit for your tap."

@@ -1,0 +1,163 @@
+//! Per-unit compress work and staged-file finalize helpers.
+
+use crate::core::domain::{ArchiveError, ArchiveFormat, MappingMember, MemberSpec, PackUnit};
+use crate::core::interrupt;
+use crate::core::ports::{
+    ArchiveEngine, ContentHasher, FileSystem, PackProgress, ProgressSnapshot,
+};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+
+pub struct PreparedUnit {
+    pub id: String,
+    pub archive_relpath: String,
+    pub unit: PackUnit,
+    pub members: Vec<MemberSpec>,
+    #[allow(dead_code)]
+    pub fingerprint: String,
+}
+
+pub struct StagedUnit {
+    pub id: String,
+    pub archive_relpath: String,
+    pub logical_bytes: u64,
+    pub mapped_members: Vec<MappingMember>,
+    pub staged_path: PathBuf,
+}
+
+pub fn report_xfer(
+    progress: &dyn PackProgress,
+    phase: &'static str,
+    current: &str,
+    units_done: usize,
+    units_total: usize,
+    logical_done: u64,
+    logical_total: u64,
+    logical_transferred: u64,
+    written_done: u64,
+) {
+    progress.report(&ProgressSnapshot {
+        units_done,
+        units_total,
+        logical_done,
+        logical_total,
+        logical_transferred,
+        written_done,
+        current: current.to_string(),
+        phase,
+    });
+}
+
+/// Move staged archive into final path: prefer rename, else copy with progress.
+pub fn finalize_staged<F: FileSystem>(
+    fs: &F,
+    staged: &Path,
+    final_path: &Path,
+    has_stage: bool,
+    prefer_rename: bool,
+    cleanup_stage: bool,
+    on_progress: &dyn Fn(u64, u64),
+) -> Result<u64, ArchiveError> {
+    if !has_stage {
+        fs.rename(staged, final_path)?;
+        let n = fs.file_len(final_path)?;
+        on_progress(n, n);
+        return Ok(n);
+    }
+    if prefer_rename {
+        if fs.rename(staged, final_path).is_ok() {
+            let n = fs.file_len(final_path)?;
+            on_progress(n, n);
+            return Ok(n);
+        }
+    }
+    let n = fs.copy_file_with_progress(staged, final_path, on_progress)?;
+    if cleanup_stage {
+        let _ = fs.remove_file(staged);
+    }
+    Ok(n)
+}
+
+fn compress_worker_id(jobs: usize) -> usize {
+    rayon::current_thread_index()
+        .unwrap_or(0)
+        .min(jobs.saturating_sub(1))
+}
+
+/// Hash members + compress one unit to stage or `.partial` under output.
+pub fn compress_one<E, H, F>(
+    p: &PreparedUnit,
+    engine: &E,
+    hasher: &H,
+    fs: &F,
+    format: ArchiveFormat,
+    stage_root: Option<&PathBuf>,
+    output: &Path,
+    logical_done: &AtomicU64,
+    units_done: &AtomicUsize,
+    written_done: &AtomicU64,
+    logical_transferred: &AtomicU64,
+    units_total: usize,
+    logical_total: u64,
+    jobs: usize,
+    progress: &dyn PackProgress,
+) -> Result<StagedUnit, ArchiveError>
+where
+    E: ArchiveEngine,
+    H: ContentHasher,
+    F: FileSystem,
+{
+    let wid = compress_worker_id(jobs);
+    let snap = |phase: &'static str| ProgressSnapshot {
+        units_done: units_done.load(Ordering::Relaxed),
+        units_total,
+        logical_done: logical_done.load(Ordering::Relaxed),
+        logical_total,
+        logical_transferred: logical_transferred.load(Ordering::Relaxed),
+        written_done: written_done.load(Ordering::Relaxed),
+        current: p.archive_relpath.clone(),
+        phase,
+    };
+
+    progress.report_worker(wid, "hash", &p.archive_relpath, 0);
+    progress.report(&snap("hash"));
+
+    let mut mapped_members = Vec::with_capacity(p.unit.files.len());
+    for (i, (file, member)) in p.unit.files.iter().zip(p.members.iter()).enumerate() {
+        if i % 32 == 0 {
+            interrupt::check()?;
+        }
+        let digest = hasher.hash_file(&member.source)?;
+        mapped_members.push(MappingMember {
+            source_relpath: file.rel_path.clone(),
+            size: file.size,
+            sha256: digest,
+        });
+        logical_done.fetch_add(file.size, Ordering::Relaxed);
+        progress.report_worker(wid, "hash", &p.archive_relpath, file.size);
+        progress.report(&snap("hash"));
+    }
+    interrupt::check()?;
+
+    let staged_path = if let Some(stage) = stage_root {
+        stage.join(&p.archive_relpath)
+    } else {
+        output.join(format!("{}.partial", p.archive_relpath))
+    };
+    if let Some(parent) = staged_path.parent() {
+        fs.create_dir_all(parent)?;
+    }
+
+    progress.report_worker(wid, "compress", &p.archive_relpath, 0);
+    progress.report(&snap("compress"));
+    engine.create_members(format, &staged_path, &p.members)?;
+    progress.report_worker(wid, "idle", "", 0);
+
+    Ok(StagedUnit {
+        id: p.id.clone(),
+        archive_relpath: p.archive_relpath.clone(),
+        logical_bytes: p.unit.logical_bytes(),
+        mapped_members,
+        staged_path,
+    })
+}

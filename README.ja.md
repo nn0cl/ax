@@ -13,6 +13,44 @@
 
 ---
 
+## インストール（macOS / Linux）
+
+詳細は **[docs/INSTALL.md](docs/INSTALL.md)** を参照。
+
+### 最短（ソースから・推奨）
+
+```bash
+# 前提: Rust 1.74+ (https://rustup.rs/) と C コンパイラ
+# macOS: xcode-select --install
+# Linux: sudo apt install build-essential   # Debian/Ubuntu 例
+# クレートの正確な版は Cargo.lock / docs/INSTALL.md を参照
+
+cd /path/to/archiver
+./scripts/install.sh
+# → 既定: ~/.local/bin/archiver（sudo 不要）
+
+export PATH="$HOME/.local/bin:$PATH"
+archiver --version
+```
+
+| 方法 | コマンド |
+|------|----------|
+| このリポジトリから release ビルド | `./scripts/install.sh` |
+| プレフィックス指定 | `./scripts/install.sh --prefix /usr/local`（権限が要る場合あり） |
+| `cargo install` | `./scripts/install.sh --cargo-install` |
+| GitHub Release バイナリ | `REPO=owner/repo ./scripts/install.sh --from-release` |
+| アンインストール | `./scripts/install.sh --uninstall` |
+
+```bash
+# 手動でも可
+cargo build --release
+install -m 755 target/release/archiver ~/.local/bin/archiver
+```
+
+**Windows は公式サポート対象外**です（自己責任でソースビルドは可能な場合があります）。
+
+---
+
 ## 目的
 
 大きなディレクトリを、保存メディアの事情（容量・USB の実効速度）に合わせて
@@ -37,11 +75,11 @@
 | **estimate** | 保存先パスの空き容量・接続クラスから推奨ユニットサイズを算出 |
 | **create / list / extract** | 単一アーカイブの作成・一覧・展開 |
 
-### pack の分割ルール（受け入れ済み）
+### pack の分割ルール
 
-1. **同一フォルダ内のファイルは生き別れにしない**（フォルダ直下ファイルは原子単位）
-2. 予算内なら **複数フォルダを 1 アーカイブに同梱**（推奨・本数削減）
-3. 1 フォルダだけで予算超過 → そのフォルダだけで 1 アーカイブ（中は割らない）
+1. 予算内なら **複数フォルダを 1 アーカイブに同梱**（本数削減）
+2. **同一フォルダが予算超過** → **ファイル単位で greedy 分割**（可能な限り unit ≤ 予算）
+3. **1 ファイルが予算超過** → **バイト分割しない**（そのファイル単独 unit）
 4. **空ディレクトリ**はマッピングに記録し、restore で再現
 5. アーカイブは階層散在。複数フォルダ同梱時は **最長共通親** の下に配置
 6. 予算は当面 **論理サイズ**（圧縮後は通常より小さい）
@@ -196,6 +234,49 @@ archiver extract -d ./restored backup.zip
 
 ---
 
+## 製品情報
+
+```bash
+archiver --version
+archiver --help
+```
+
+- **Version**: **v0.0.1**
+- **Author**: nn0cl \<nn0cl@dstechnology.co.jp\>
+- **Copyright**: (c) nn0cl@dstechnology.co.jp. All rights reserved.
+- **依存バージョン**: [docs/INSTALL.md](docs/INSTALL.md)（Rust 1.74+、クレート範囲と `Cargo.lock`）
+- **リリース手順**: [docs/RELEASE.md](docs/RELEASE.md) / `./scripts/release.sh X.Y.Z`
+- **変更履歴**: [CHANGELOG.md](CHANGELOG.md)
+
+### 免責・自己責任（保証なし）
+
+本ソフトウェアは **現状有姿（AS IS）** で提供され、**明示・黙示を問わず一切の保証はありません**  
+（特定目的適合性、データ無損失、継続稼働などを含みますがこれらに限りません）。
+
+- 自動テスト（`cargo test` / CI）は **回帰の抑制** を目的とします。  
+  **すべての環境・データでの正しさを保証するものではありません。**
+- **SLA（稼働率・応答時間・復旧保証）はありません。**
+- バックアップの成否・完全性は **利用者自身の検証**（`verify` 等）と責任範囲です。
+- 重要データでは、復元テストと複数媒体への複製を推奨します。
+
+**利用は自己責任（use at your own risk）です。**
+
+### 体系的に検証しきれていない領域（例）
+
+テストや実運用でカバーしている範囲は限定的です。次のようなケースは  
+**体系的な自動検証が薄い**ため、失敗・想定外挙動があり得ます。
+
+| 領域 | 意味・起きうること |
+|------|-------------------|
+| **極端な木** | 数百万 inode、深さ数百、超長いパス、循環に近いリンク構造など。走査時間・メモリ・OS 制限に依存 |
+| **特殊権限** | root 専用、ACL、macOS TCC（Desktop/Documents）、SIP、読み取り不可ファイル。sudo や権限不足でスキップ/失敗 |
+| **壊れた / 不安定な USB** | 途中切断、書き込みエラー、I/O タイムアウト、見せかけの成功、リトライ不能なメディア不良 |
+| **文字化け・特殊名** | 異体字、制御文字、非常に長いファイル名、ケースのみが異なる名（OS 依存） |
+| **同時実行** | 同一 output / work-dir への並列 pack、他プロセスとの同時書き込み |
+| **全 OS マトリクス** | 主に macOS 実運用 + Linux CI。Windows 等は未保証 |
+
+これらは「テストが無いから品質ゼロ」ではなく、**境界条件を網羅した保証はしていない**という意味です。
+
 ## コマンド一覧
 
 | コマンド | 説明 |
@@ -221,14 +302,14 @@ archiver extract -d ./restored backup.zip
 | `--target-secs` | 見積の転送時間ウィンドウ（既定 45） |
 | `--throughput` | スループット上書き（バイト/秒、例: `80M`） |
 | `--measure` | 書き込み微測定（estimate / auto-size） |
-| `-f, --format` | `zip` / `tar` / `tar.gz` / `tar.zst` |
+| `-f, --format` | `zip` / `tar` / `tar.gz` / `tar.zst`（**既定: tar.zst**） |
 | `--mapping` | マッピング出力パス（既定: `<output>/archiver-map.json`） |
 | `--dry-run` | 計画のみ（アーカイブ・マッピングを書かない） |
 | `-v, --verbose` | 進捗 UI に **圧縮スレッドごとの速度**（`compress0`…）を追加表示（経過/ETA は常時表示） |
 | `--progress` | 進捗をターミナル上で上書き表示（既定: TTY なら true） |
-| `--jobs N` | 並列圧縮ワーカー数（既定 1） |
-| `--work-dir <dir>` | 圧縮をローカル（SSD 等）で行い、完成後に `--output` へコピー |
-| `--cleanup-work-dir` | 転送成功後にステージ領域（`work-dir/.archiver-work/...`）を削除 |
+| `--jobs N` | 並列圧縮ワーカー数（**既定: CPU 数、最大 8**） |
+| `--work-dir <dir>` | ステージ用の**親ディレクトリ**。直下に `archiver-<random>/` を新規作成（既存ファイルには触れない）。**既定では成否に関わらず削除** |
+| `--keep-stage` | デバッグ用にステージを残す（`--work-dir` 必須） |
 | `--resume` | `output/archiver-plan.json` を使い、完了済みユニットを fingerprint でスキップ |
 | `--check-resources` | output / work-dir の空き容量とメモリ目安を検査（既定 true） |
 | `--force-resources` | 空き不足でも続行（非推奨） |
@@ -288,8 +369,24 @@ pack-out/
 
 1. pack 開始時（dry-run 以外）に **`archiver-plan.json` を先に書く**
 2. 各アーカイブ完了ごとに plan を更新（`status=done` + サイズ + メンバー sha256）
-3. `--resume` 時はソースを再走査・再計画し、**メンバー集合の fingerprint**（パス+サイズ）が一致し、かつアーカイブファイルが残っているユニットはスキップ
+3. `--resume` 時はソースを再走査・再計画し、**メンバー集合の fingerprint**（パス+サイズ）が一致し、かつ **`--output` 上のアーカイブ**が残ってサイズ一致するユニットだけスキップ
 4. フォルダ追加・削除・サイズ変更で fingerprint が変わったユニットだけ作り直し
+
+**work-dir は resume に使いません（安全上の方針）**
+
+| 項目 | 挙動 |
+|------|------|
+| ステージパス | 毎回 `work-dir/archiver-<32hex>/` を**新規作成**（親にある他ファイルは触らない） |
+| 前回のステージ | **読まない・再利用しない** |
+| 既定 | 成功・失敗・中断のあと **ステージを常に削除**（ディスクを食いっぱなさない） |
+| `--keep-stage` | デバッグ時だけ残す（パスを表示） |
+| 信頼するもの | `archiver-plan.json` の `done` + **output 上の完成アーカイブ**（存在と byte サイズ） |
+
+```text
+--work-dir /tmp/scratch/          ← 既存 dir でよい（他ファイルがあっても OK）
+  keep-me.txt                     ← 触らない
+  archiver-a1b2…/                 ← 今回の作業だけ（既定では必ず消える）
+```
 
 進捗表示（`/dev/tty` または stderr、同じ数行を上書き・ログは流れない）:
 
@@ -299,7 +396,13 @@ transfer  120.5 MiB written  25.0%  40.1 MiB/s  elapsed 1m23s  ETA 4m12s  photos
 ```
 
 - **elapsed** … 開始からの経過時間
-- **ETA** … 論理バイト進捗と平滑化した入力速度から残りの予想時間（速度不明時は `--`）
+- **ETA** … **全処理完了の近似** = `max(入力残り, 転送残り)`（unit 個数は使わない）
+  - `in` … 残りソース論理バイト / 入力速度
+  - `xfer` … `(全論理 − 転送済み論理) × 圧縮率 r` / 書き込み速度  
+    `r = 転送済みアーカイブ量 / 転送済み論理`（未転送時は r=1.0）
+- **total … %** … ソース**論理バイト**進捗
+- **transfer … %** … 書き込み進捗 = `書いた量 / 推定総アーカイブ量`（ETA の xfer と同じ r）  
+  ※ unit 本数の比ではない
 - **total** … 入力（論理バイト）の処理速度（ハッシュ〜圧縮）
 - **transfer** … 出力アーカイブの書き込み速度
 - **`-v`** … 上記に加えて `compress0`… 各スレッド速度（別フラグは増やさない）
@@ -324,6 +427,7 @@ archiver verify -m ./out/archiver-map.json --quick
 | `-m, --mapping` | `archiver-map.json` |
 | `--archives-root` | `archive_relpath` の基準（既定: マッピングの親ディレクトリ） |
 | `--quick` | 存在 + 一覧のみ（extract / SHA-256 を省略） |
+| `--progress` | 進捗 UI（既定: TTY なら true）。pack と同様に archives / ハッシュバイト / ETA |
 
 問題があると非ゼロ終了し、`issue: ...` を stderr に出します。
 

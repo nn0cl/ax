@@ -11,6 +11,20 @@ Supported formats: **ZIP**, **TAR**, **TAR.GZ**, **TAR.ZST** (zstd, multi-thread
 > For a fuller guide in Japanese (recommended if you work in Japanese), see
 > **[README.ja.md](README.ja.md)**.
 
+## Disclaimer (no warranty)
+
+This software is provided **AS IS**, without warranty of any kind. Automated tests
+exist to reduce regressions; they do **not** guarantee correctness on every
+environment or dataset. **No SLA.** Use at your own risk.
+
+**Version: v0.0.1**
+
+Author: nn0cl \<nn0cl@dstechnology.co.jp\>.  
+Copyright (c) nn0cl@dstechnology.co.jp. All rights reserved.
+
+Install & dependency versions: [docs/INSTALL.md](docs/INSTALL.md)  
+Release process: [docs/RELEASE.md](docs/RELEASE.md) · Changelog: [CHANGELOG.md](CHANGELOG.md)
+
 ## Pack rules (accepted)
 
 1. Prefer **one archive per folder** (immediate files only).
@@ -19,6 +33,31 @@ Supported formats: **ZIP**, **TAR**, **TAR.GZ**, **TAR.ZST** (zstd, multi-thread
 4. Empty directories are recorded in the mapping and recreated on restore.
 5. Budget = media capacity × connection factor, explicit `--target-size`, or
    `--auto-size` transfer estimate.
+
+## Install (macOS & Linux)
+
+Full guide: **[docs/INSTALL.md](docs/INSTALL.md)**
+
+```bash
+# Requires Rust (rustup) + C toolchain
+./scripts/install.sh
+# → ~/.local/bin/archiver by default
+export PATH="$HOME/.local/bin:$PATH"
+archiver --version
+```
+
+| Method | Command |
+|--------|---------|
+| From this tree (release) | `./scripts/install.sh` |
+| Custom prefix | `./scripts/install.sh --prefix /usr/local` |
+| `cargo install` | `./scripts/install.sh --cargo-install` |
+| GitHub Release binary | `REPO=owner/repo ./scripts/install.sh --from-release` |
+| Uninstall | `./scripts/install.sh --uninstall` |
+
+```bash
+cargo build --release
+install -m 755 target/release/archiver ~/.local/bin/archiver
+```
 
 ## Build
 

@@ -8,13 +8,16 @@ Rules for the Rust binary and library that implement the archiver CLI.
 
 | Module | Responsibility |
 |--------|----------------|
-| `core::domain` | formats, path safety, media budget, pack planner, mapping types |
-| `core::application` | pack / restore / create / list / extract use cases |
-| `core::ports` | `ArchiveEngine`, `FileScanner`, `MappingStore` |
+| `core::domain` | formats, path safety, media budget, pack planner, write ETA, mapping types |
+| `core::application` | pack / restore / create / list / extract / verify use cases |
+| `core::application::pack` | pack: plan_resume, preflight, stage, pipeline, unit_work |
+| `core::application::verify` | verify: report, one_archive, stage |
+| `core::ports` | `ArchiveEngine`, `FileScanner`, `MappingStore`, `FileSystem`, … |
 | `adapters::archive` | ZIP, TAR, TAR.GZ, TAR.ZST engines |
-| `adapters::fs` | scan + pack entry helpers |
+| `adapters::fs` | scan + local FS + resources |
 | `adapters::mapping` | JSON mapping I/O |
-| `delivery` | clap CLI |
+| `delivery::cli` | clap args + dispatch (`args`, `helpers`, `mod`) |
+| `delivery::progress` | TTY UI: `rate` / `format` / `draw` (ETA math in domain) |
 
 ## Dependency Rule
 

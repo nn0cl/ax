@@ -5,8 +5,13 @@
 pub struct ProgressSnapshot {
     pub units_done: usize,
     pub units_total: usize,
+    /// Source logical bytes processed so far (mainly hash progress).
     pub logical_done: u64,
+    /// Total source logical bytes in the pack.
     pub logical_total: u64,
+    /// Logical bytes of units fully written to the final output (transfer done).
+    pub logical_transferred: u64,
+    /// Archive bytes written to the final output so far.
     pub written_done: u64,
     /// Current archive relative path (or phase label).
     pub current: String,

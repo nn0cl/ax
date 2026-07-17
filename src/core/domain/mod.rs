@@ -8,6 +8,7 @@ mod path_safety;
 mod resource_check;
 mod transfer_estimate;
 mod volume_assign;
+mod write_estimate;
 
 pub use error::ArchiveError;
 pub use format::ArchiveFormat;
@@ -33,6 +34,10 @@ pub use transfer_estimate::{
 };
 pub use volume_assign::{
     assign_volume_paths, budget_from_volume_count, count_volumes_needed,
+};
+pub use write_estimate::{
+    compression_ratio, estimated_total_write_bytes, eta_input_secs, eta_transfer_secs,
+    eta_wall_clock, write_progress_pct, EtaBreakdown,
 };
 
 /// Metadata for one member inside an archive.

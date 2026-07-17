@@ -1,5 +1,6 @@
 use crate::adapters::fs::{collect_pack_entries, ensure_parent_dir};
 use crate::core::domain::{safe_join, ArchiveError, ArchiveMember, MemberSpec};
+use crate::core::interrupt;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -25,6 +26,7 @@ pub fn create_zip_members(output: &Path, members: &[MemberSpec]) -> Result<(), A
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
     for member in members {
+        interrupt::check()?;
         zip.start_file(&member.member_name, options)
             .map_err(|e| ArchiveError::Engine(e.to_string()))?;
         let mut src = File::open(&member.source)?;
@@ -67,6 +69,7 @@ pub fn extract_zip(archive: &Path, dest: &Path) -> Result<(), ArchiveError> {
     let mut zip = ZipArchive::new(file).map_err(|e| ArchiveError::Engine(e.to_string()))?;
 
     for i in 0..zip.len() {
+        interrupt::check()?;
         let mut entry = zip
             .by_index(i)
             .map_err(|e| ArchiveError::Engine(e.to_string()))?;

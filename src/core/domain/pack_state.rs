@@ -26,6 +26,9 @@ pub struct PlanUnitRecord {
     /// On-disk archive size when status is Done.
     #[serde(default)]
     pub archive_bytes: Option<u64>,
+    /// SHA-256 of the finished archive file (pack-time); used for resume integrity.
+    #[serde(default)]
+    pub archive_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -82,16 +85,23 @@ impl PlanUnitRecord {
             members,
             status: PlanUnitStatus::Pending,
             archive_bytes: None,
+            archive_sha256: None,
         }
     }
 
-    pub fn mark_done(&mut self, members: Vec<MappingMember>, archive_bytes: u64) {
+    pub fn mark_done(
+        &mut self,
+        members: Vec<MappingMember>,
+        archive_bytes: u64,
+        archive_sha256: Option<String>,
+    ) {
         self.members = members;
         self.members
             .sort_by(|a, b| a.source_relpath.cmp(&b.source_relpath));
         self.fingerprint = fingerprint_members(&self.members);
         self.status = PlanUnitStatus::Done;
         self.archive_bytes = Some(archive_bytes);
+        self.archive_sha256 = archive_sha256;
     }
 }
 

@@ -1,4 +1,5 @@
 use crate::core::domain::ArchiveError;
+use crate::core::interrupt;
 use crate::core::ports::FileSystem;
 use std::path::Path;
 
@@ -30,10 +31,44 @@ impl FileSystem for LocalFileSystem {
     }
 
     fn copy_file(&self, from: &Path, to: &Path) -> Result<u64, ArchiveError> {
+        self.copy_file_with_progress(from, to, &|_, _| {})
+    }
+
+    fn copy_file_with_progress(
+        &self,
+        from: &Path,
+        to: &Path,
+        on_progress: &dyn Fn(u64, u64),
+    ) -> Result<u64, ArchiveError> {
+        use std::io::{Read, Write};
+
         if let Some(parent) = to.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        Ok(std::fs::copy(from, to)?)
+        let total = std::fs::metadata(from)?.len();
+        let mut src = std::fs::File::open(from)?;
+        let mut dst = std::fs::File::create(to)?;
+        let mut buf = vec![0u8; 1024 * 1024]; // 1 MiB
+        let mut copied = 0u64;
+        let mut last_report = 0u64;
+        on_progress(0, total);
+        loop {
+            interrupt::check()?;
+            let n = src.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            dst.write_all(&buf[..n])?;
+            copied += n as u64;
+            // Throttle UI updates (~every 8 MiB).
+            if copied == total || copied.saturating_sub(last_report) >= 8 * 1024 * 1024 {
+                on_progress(copied, total);
+                last_report = copied;
+            }
+        }
+        dst.flush()?;
+        on_progress(copied, total);
+        Ok(copied)
     }
 
     fn remove_file(&self, path: &Path) -> Result<(), ArchiveError> {
